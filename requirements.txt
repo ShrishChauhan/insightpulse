@@ -1,0 +1,17 @@
+# InsightPulse dependencies
+supabase
+python-dotenv
+anthropic
+groq
+google-genai
+praw
+feedparser
+sentence-transformers
+tiktoken
+langgraph
+langchain-core
+apscheduler
+streamlit
+pandas
+reportlab
+requests
