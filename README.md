@@ -127,4 +127,4 @@ Pipeline complete through Sessions 1–9. Live posting integration in progress (
 ## Built By
 
 Shrish Chauhan — Engineering student targeting APM/RPM roles.  
-[LinkedIn](https://www.linkedin.com/in/shrishchauhan)
+[LinkedIn](https://www.linkedin.com/in/shrish-chauhan)
