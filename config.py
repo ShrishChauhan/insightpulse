@@ -29,9 +29,14 @@ REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "InsightPulse/1.0")
 # Alerts
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
 
-# Buffer (LinkedIn posting via Buffer API v1)
+# Buffer (LinkedIn posting via Buffer API v1 — kept for reference)
 BUFFER_ACCESS_TOKEN = os.getenv("BUFFER_ACCESS_TOKEN")
 BUFFER_LINKEDIN_PROFILE_ID = os.getenv("BUFFER_LINKEDIN_PROFILE_ID")
+
+# LinkedIn Consumer API (direct posting via ugcPosts)
+LINKEDIN_ACCESS_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN")
+LINKEDIN_PERSON_URN = os.getenv("LINKEDIN_PERSON_URN")
+LINKEDIN_TOKEN_CREATED = os.getenv("LINKEDIN_TOKEN_CREATED", "2026-06-13")
 
 # Startup validation — fail loudly at import time, not deep in the call stack
 _REQUIRED: dict[str, str | None] = {

@@ -20,8 +20,10 @@ def _build_orchestrator():
 def run_scheduler() -> None:
     """Start APScheduler: run_weekly() every Monday and Thursday at 9 AM."""
     from apscheduler.schedulers.blocking import BlockingScheduler
+    from tools.notifier import Notifier
 
     orchestrator = _build_orchestrator()
+    notifier = Notifier()
     scheduler = BlockingScheduler(timezone="UTC")
 
     scheduler.add_job(
@@ -33,7 +35,37 @@ def run_scheduler() -> None:
         id="insightpulse_weekly",
     )
 
+    def _weekly_digest_job() -> None:
+        from datetime import datetime, timezone, timedelta
+        from core.db import SupabaseClient as _DB
+        digest_db = _DB()
+        stats = digest_db.get_weekly_post_stats()
+        now = datetime.now(timezone.utc)
+        candidates = []
+        for weekday in (0, 3):  # Monday=0, Thursday=3
+            delta = (weekday - now.weekday()) % 7 or 7
+            next_dt = (now + timedelta(days=delta)).replace(
+                hour=9, minute=0, second=0, microsecond=0
+            )
+            candidates.append(next_dt)
+        stats["next_run_time"] = min(candidates).strftime("%A %Y-%m-%d 09:00 UTC")
+        notifier.notify_weekly_digest(stats)
+        print(
+            f"[digest] Weekly digest sent. "
+            f"posts={stats['posts_sent']} avg={stats['avg_critic_score']}"
+        )
+
+    scheduler.add_job(
+        func=_weekly_digest_job,
+        trigger="cron",
+        day_of_week="sun",
+        hour=20,
+        minute=0,
+        id="insightpulse_weekly_digest",
+    )
+
     print("[main] InsightPulse scheduler started. Runs Monday + Thursday at 09:00 UTC.")
+    print("[main] Weekly digest fires every Sunday at 20:00 UTC.")
     print("[main] Press Ctrl+C to stop.")
     try:
         scheduler.start()

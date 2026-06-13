@@ -14,10 +14,11 @@ import config
 from core.db import SupabaseClient
 from core.llm_client import LLMClient
 from core.retriever import Retriever
+from agents.analyst import AnalystAgent
 from agents.scout import ScoutAgent
 from agents.writer import WriterAgent
 from agents.critic import CriticAgent
-from tools.linkedin_poster import BufferPoster
+from tools.linkedin_poster import LinkedInPoster
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +77,11 @@ class OrchestratorAgent:
         self._db = db or SupabaseClient()
         self._llm = llm or LLMClient()
         self._retriever = Retriever(db=self._db, llm=self._llm)
+        self._analyst = AnalystAgent(retriever=self._retriever, db=self._db)
         self._scout = ScoutAgent(db=self._db, llm=self._llm)
         self._writer = WriterAgent(llm=self._llm, db=self._db)
         self._critic = CriticAgent(llm=self._llm, db=self._db)
-        self._poster = BufferPoster(db=self._db)
+        self._poster = LinkedInPoster(db=self._db)
 
         self._graph = self._build_graph()
         logger.info("OrchestratorAgent compiled successfully.")
@@ -414,19 +416,17 @@ class OrchestratorAgent:
             }
 
     def _retrieve_node(self, state: InsightPulseState) -> dict:
-        """Retriever.retrieve() + generate_insight(); fill retrieval_result + insight."""
+        """AnalystAgent.analyze(); fill retrieval_result + insight."""
         try:
             topic_dict = state.get("current_topic") or {}
             topic = topic_dict.get("topic", "")
             company = topic_dict.get("company", "")
 
             print(f"[retrieve_node] topic='{topic}' company='{company}'")
-            retrieval = self._retriever.retrieve(topic=topic, company=company)
-            print(f"[retrieve_node] {retrieval['chunk_count']} chunks retrieved.")
-
-            insight = self._retriever.generate_insight(retrieval)
+            retrieval, insight = self._analyst.analyze(topic=topic, company=company)
             print(
-                f"[retrieve_node] confidence={insight['confidence']} "
+                f"[retrieve_node] {retrieval['chunk_count']} chunks retrieved. "
+                f"confidence={insight['confidence']} "
                 f"pain_points={len(insight['insight'].get('pain_points', []))}"
             )
             return {
@@ -512,7 +512,7 @@ class OrchestratorAgent:
             }
 
     def _post_node(self, state: InsightPulseState) -> dict:
-        """Call BufferPoster.post(); log to Supabase posts table on success."""
+        """Call LinkedInPoster.post(); log to Supabase posts table on success."""
         try:
             dry_run = state.get("dry_run", True)
             post_draft = state.get("post_draft") or {}

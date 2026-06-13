@@ -183,11 +183,15 @@ class LLMClient:
     # ------------------------------------------------------------------
 
     def _parse_json(self, raw: str) -> dict:
-        """Strip markdown fences and parse JSON."""
+        """Strip markdown fences and parse JSON. Falls back to strict=False for control chars."""
         # Remove ```json ... ``` or ``` ... ``` fences
         cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.IGNORECASE)
         cleaned = re.sub(r"\s*```$", "", cleaned.strip())
-        return json.loads(cleaned)
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            # Groq/Llama sometimes embeds literal control chars in string values
+            return json.loads(cleaned, strict=False)
 
     def _is_rate_limit(self, exc: Exception) -> bool:
         """Return True if the exception signals a rate-limit / quota error."""

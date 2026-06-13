@@ -1,12 +1,11 @@
-"""Auto-posts approved content to LinkedIn via Buffer API v1."""
+"""Posts approved content to LinkedIn via the official LinkedIn Consumer API (ugcPosts)."""
 
 from __future__ import annotations
 
 import json
 import logging
-import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from typing_extensions import TypedDict
@@ -16,55 +15,51 @@ from core.db import SupabaseClient
 
 logger = logging.getLogger(__name__)
 
+LINKEDIN_API_URL = "https://api.linkedin.com/v2/ugcPosts"
+RATE_LIMIT_HOURS = 6
+TOKEN_WARN_DAYS = 53  # LinkedIn tokens expire at 60 days; warn 7 days before
 
-# ---------------------------------------------------------------------------
-# TypedDict
-# ---------------------------------------------------------------------------
 
 class PostResult(TypedDict):
-    """Result returned by BufferPoster.post()."""
+    """Result returned by LinkedInPoster.post()."""
 
     success: bool
     post_id: Optional[str]
-    status: str  # dry_run | posted | queue_full | not_configured | error
+    status: str  # dry_run | posted | rate_limited | not_configured | error
     queued_at: Optional[str]
 
 
-# ---------------------------------------------------------------------------
-# BufferPoster
-# ---------------------------------------------------------------------------
-
-class BufferPoster:
-    """Posts approved LinkedIn content via Buffer API v1."""
-
-    BUFFER_API_BASE = "https://api.bufferapp.com/1"
-    QUEUE_LIMIT = 9  # Buffer free tier max is 10; halt at 9 for one slot of safety
+class LinkedInPoster:
+    """Posts approved LinkedIn content via the official LinkedIn Consumer API."""
 
     def __init__(self, db: SupabaseClient) -> None:
-        """Inject SupabaseClient for run logging."""
+        """Inject SupabaseClient for rate-limit checks and run logging."""
         self._db = db
-        self._token = config.BUFFER_ACCESS_TOKEN
-        self._profile_id = config.BUFFER_LINKEDIN_PROFILE_ID
+        self._token = config.LINKEDIN_ACCESS_TOKEN
+        self._person_urn = config.LINKEDIN_PERSON_URN
+        self._token_created = config.LINKEDIN_TOKEN_CREATED
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def post(self, content: str, dry_run: bool = True) -> PostResult:
-        """Queue content to Buffer LinkedIn profile.
+        """Post content to LinkedIn.
 
-        dry_run=True: log to Supabase, print content, return status='dry_run'.
-        dry_run=False: check queue then POST to Buffer API.
-        Returns PostResult — never raises.
+        dry_run=True: log to db, print content, return status='dry_run'.
+        dry_run=False: POST to LinkedIn ugcPosts API if rate limit not exceeded.
+        Returns PostResult -- never raises.
         """
-        if not self._token or not self._profile_id:
+        self._check_token_expiry()
+
+        if not self._token or not self._person_urn:
             self._db.log_run(
-                agent_name="buffer_poster",
+                agent_name="linkedin_poster",
                 status="skipped",
                 input_summary="post() called",
-                output_summary="BUFFER_ACCESS_TOKEN or BUFFER_LINKEDIN_PROFILE_ID not set",
+                output_summary="LINKEDIN_ACCESS_TOKEN or LINKEDIN_PERSON_URN not set",
             )
-            logger.warning("BufferPoster: credentials not configured.")
+            logger.warning("LinkedInPoster: credentials not configured.")
             return PostResult(
                 success=False, post_id=None,
                 status="not_configured", queued_at=None,
@@ -72,116 +67,100 @@ class BufferPoster:
 
         if dry_run:
             self._db.log_run(
-                agent_name="buffer_poster",
+                agent_name="linkedin_poster",
                 status="success",
                 input_summary=f"dry_run post len={len(content)}",
-                output_summary="dry_run -- no Buffer API call made",
+                output_summary="dry_run -- no LinkedIn API call made",
             )
-            print(f"[buffer_poster] DRY RUN -- would post to LinkedIn ({len(content)} chars):")
+            print(f"[linkedin_poster] DRY RUN -- would post to LinkedIn ({len(content)} chars):")
             print(f"  {content[:300]}{'...' if len(content) > 300 else ''}")
             return PostResult(
                 success=True, post_id=None,
                 status="dry_run", queued_at=None,
             )
 
-        # Live path: check queue before posting
-        queue_count = self.check_queue_count()
-        if queue_count >= self.QUEUE_LIMIT:
-            msg = f"Buffer queue at {queue_count}/10 -- at limit, skipping post."
+        # Live path: enforce rate limit
+        if self._db.has_recent_post(hours=RATE_LIMIT_HOURS):
+            msg = f"Rate limit: a post was already made in the last {RATE_LIMIT_HOURS} hours."
             logger.warning(msg)
             self._db.log_run(
-                agent_name="buffer_poster",
+                agent_name="linkedin_poster",
                 status="skipped",
                 input_summary=f"post() called len={len(content)}",
                 output_summary=msg,
             )
             return PostResult(
                 success=False, post_id=None,
-                status="queue_full", queued_at=None,
+                status="rate_limited", queued_at=None,
             )
 
-        return self._call_buffer_api(content)
-
-    def get_profiles(self) -> list[dict]:
-        """Return all Buffer profiles -- helper to find BUFFER_LINKEDIN_PROFILE_ID."""
-        if not self._token:
-            logger.warning("BufferPoster.get_profiles: no access token configured.")
-            return []
-        try:
-            url = f"{self.BUFFER_API_BASE}/profiles.json?access_token={self._token}"
-            req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                return json.loads(resp.read().decode())
-        except Exception as exc:
-            logger.error("get_profiles failed: %s", exc)
-            return []
-
-    def check_queue_count(self) -> int:
-        """Return number of posts currently pending in the Buffer queue."""
-        if not self._token or not self._profile_id:
-            return 0
-        try:
-            url = (
-                f"{self.BUFFER_API_BASE}/profiles/{self._profile_id}"
-                f"/updates/pending.json?access_token={self._token}"
-            )
-            req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
-                return int(data.get("total", len(data.get("updates", []))))
-        except Exception as exc:
-            logger.warning("check_queue_count failed (defaulting to 0): %s", exc)
-            return 0
+        return self._call_linkedin_api(content)
 
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
 
-    def _call_buffer_api(self, content: str) -> PostResult:
-        """POST content to Buffer API; return PostResult."""
+    def _check_token_expiry(self) -> None:
+        """Print warning if token was issued >= 53 days ago (expires at 60 days)."""
         try:
-            payload = urllib.parse.urlencode({
-                "profile_ids[]": self._profile_id,
-                "text": content,
-                "access_token": self._token,
-            }).encode()
+            issued = date.fromisoformat(self._token_created)
+            age_days = (date.today() - issued).days
+            if age_days >= TOKEN_WARN_DAYS:
+                remaining = 60 - age_days
+                print(
+                    f"[linkedin_poster] WARNING: LinkedIn token expires in ~{remaining} days"
+                    f" -- re-authenticate soon."
+                )
+        except (ValueError, TypeError):
+            pass
+
+    def _call_linkedin_api(self, content: str) -> PostResult:
+        """POST content to LinkedIn ugcPosts endpoint; return PostResult."""
+        try:
+            body = {
+                "author": self._person_urn,
+                "lifecycleState": "PUBLISHED",
+                "specificContent": {
+                    "com.linkedin.ugc.ShareContent": {
+                        "shareCommentary": {"text": content},
+                        "shareMediaCategory": "NONE",
+                    }
+                },
+                "visibility": {
+                    "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+                },
+            }
+            payload = json.dumps(body).encode()
             req = urllib.request.Request(
-                f"{self.BUFFER_API_BASE}/updates/create.json",
+                LINKEDIN_API_URL,
                 data=payload,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                headers={
+                    "Authorization": f"Bearer {self._token}",
+                    "Content-Type": "application/json",
+                    "X-Restli-Protocol-Version": "2.0.0",
+                },
                 method="POST",
             )
             with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read().decode())
-
-            updates = data.get("updates", [])
-            if not updates:
-                raise ValueError(f"Buffer API returned no updates: {data}")
-
-            update = updates[0]
-            post_id = update.get("id")
-            raw_ts = update.get("created_at")
-            queued_at = (
-                datetime.fromtimestamp(raw_ts, tz=timezone.utc).isoformat()
-                if raw_ts else None
-            )
+                post_id = resp.headers.get("X-RestLi-Id") or resp.headers.get("x-restli-id")
+                queued_at = datetime.now(timezone.utc).isoformat()
 
             self._db.log_run(
-                agent_name="buffer_poster",
+                agent_name="linkedin_poster",
                 status="success",
                 input_summary=f"post len={len(content)}",
-                output_summary=f"queued post_id={post_id} queued_at={queued_at}",
+                output_summary=f"posted post_id={post_id} at={queued_at}",
             )
-            print(f"[buffer_poster] LIVE -- queued to Buffer. post_id={post_id}")
+            print(f"[linkedin_poster] LIVE -- posted to LinkedIn. post_id={post_id}")
             return PostResult(
                 success=True, post_id=post_id,
                 status="posted", queued_at=queued_at,
             )
         except Exception as exc:
             msg = str(exc)
-            logger.error("Buffer API call failed: %s", msg)
+            logger.error("LinkedIn API call failed: %s", msg)
             self._db.log_run(
-                agent_name="buffer_poster",
+                agent_name="linkedin_poster",
                 status="failed",
                 input_summary=f"post len={len(content)}",
                 output_summary=f"error: {msg}",

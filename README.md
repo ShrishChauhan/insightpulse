@@ -122,7 +122,7 @@ python -m streamlit run dashboard/app.py
 
 ## Status
 
-Pipeline complete through Sessions 1–9. Live posting integration in progress (Buffer credentials pending). Reddit API credentials pending — HN + RSS sources are active.
+**Pipeline operational.** End-to-end dry-run passed 19/25 (auto_post threshold). HN + RSS sources active (247 chunks in Supabase). LinkedIn Consumer API integrated. Reddit API credentials pending — all other sources live.
 
 ## Built By
 

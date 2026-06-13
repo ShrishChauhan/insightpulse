@@ -134,3 +134,6 @@ Format: one line, under 15 words, no explanation. Never remove entries.
 - Embedder.__init__() takes no args — Retriever lazy-loads it as Embedder(), not Embedder(self.db).
 - Streamlit + Supabase caching: use @st.cache_resource for the Client singleton; use @st.cache_data(ttl=60) for data fetchers that return plain lists/dicts — never pass the Client as an argument to cache_data functions (not serialisable); call the resource inside instead.
 - `streamlit` binary not on PATH in Windows bash shell — use `python -m streamlit run` instead.
+- Always verify .env not staged before git push — use git status to confirm. Also add .claude/ to .gitignore to keep local Claude Code config out of the repo.
+- Groq/Llama returns literal control characters in JSON strings — _parse_json() uses json.loads(strict=False) as fallback when strict parse fails; Python's strict=True is the default and rejects these.
+- Supabase free tier pauses after ~7 days of inactivity — restore via MCP mcp__supabase__restore_project before any session that follows a gap.

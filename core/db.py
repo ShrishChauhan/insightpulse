@@ -363,6 +363,67 @@ class SupabaseClient:
             print(f"[db] delete_old_embeddings failed: {exc}")
             return 0
 
+    def has_recent_post(self, hours: int = 6) -> bool:
+        """Return True if any post was logged in the last N hours (rate-limit check)."""
+        from datetime import datetime, timezone, timedelta
+        try:
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+            result = (
+                self._client.table("posts")
+                .select("id")
+                .gte("created_at", cutoff)
+                .limit(1)
+                .execute()
+            )
+            return len(result.data or []) > 0
+        except Exception as exc:
+            print(f"[db] has_recent_post failed: {exc}")
+            return False
+
+    def get_weekly_post_stats(self) -> dict:
+        """Return post stats for the last 7 days: count, avg score, top topic."""
+        from datetime import datetime, timezone, timedelta
+        try:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+            posts_result = (
+                self._client.table("posts")
+                .select("critic_score, topic_id")
+                .gte("created_at", cutoff)
+                .execute()
+            )
+            posts = posts_result.data or []
+            posts_sent = len(posts)
+            avg_score = (
+                round(sum(p["critic_score"] for p in posts) / posts_sent, 1)
+                if posts_sent else 0.0
+            )
+
+            top_topic = "N/A"
+            if posts:
+                top_post = max(posts, key=lambda p: p["critic_score"])
+                topic_id = top_post.get("topic_id")
+                if topic_id:
+                    t_result = (
+                        self._client.table("topics")
+                        .select("topic, company")
+                        .eq("id", topic_id)
+                        .single()
+                        .execute()
+                    )
+                    if t_result.data:
+                        top_topic = (
+                            f"{t_result.data['topic']} ({t_result.data['company']})"
+                        )
+
+            return {
+                "posts_sent": posts_sent,
+                "avg_critic_score": avg_score,
+                "top_topic": top_topic,
+            }
+        except Exception as exc:
+            print(f"[db] get_weekly_post_stats failed: {exc}")
+            return {"posts_sent": 0, "avg_critic_score": 0.0, "top_topic": "N/A"}
+
     def similarity_search(
         self,
         query_embedding: list[float],
