@@ -114,6 +114,9 @@ SENTIMENT_WORDS = {
     ],
 }
 
+# Reddit scraper selection — JSON endpoint needs no credentials; PRAW needs CLIENT_ID
+USE_REDDIT_JSON = not bool(REDDIT_CLIENT_ID)
+
 RSS_FEEDS = [
     {"name": "TechCrunch",   "url": "https://techcrunch.com/feed/"},
     {"name": "TheVerge",     "url": "https://www.theverge.com/rss/index.xml"},

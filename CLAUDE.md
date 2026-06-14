@@ -137,3 +137,4 @@ Format: one line, under 15 words, no explanation. Never remove entries.
 - Always verify .env not staged before git push — use git status to confirm. Also add .claude/ to .gitignore to keep local Claude Code config out of the repo.
 - Groq/Llama returns literal control characters in JSON strings — _parse_json() uses json.loads(strict=False) as fallback when strict parse fails; Python's strict=True is the default and rejects these.
 - Supabase free tier pauses after ~7 days of inactivity — restore via MCP mcp__supabase__restore_project before any session that follows a gap.
+- Reddit public JSON: append .json to any subreddit URL, use descriptive User-Agent not browser-mimicking string, 2s sleep between requests, use after= param for pagination across pages. Note: Reddit returns 403 from cloud/VPN IPs — needs residential IP or OAuth credentials to reliably access.

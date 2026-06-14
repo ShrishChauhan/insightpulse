@@ -155,6 +155,103 @@ class RedditScraper:
 
 
 # ---------------------------------------------------------------------------
+# RedditJSONScraper
+# ---------------------------------------------------------------------------
+
+class RedditJSONScraper:
+    """Fetches top Reddit posts via public .json endpoints — zero credentials needed."""
+
+    AGENT_NAME = "scraper_reddit_json"
+    MIN_SCORE = 5
+    PAGES = 2
+    LIMIT = 100
+    JSON_USER_AGENT = (
+        "InsightPulse/1.0 (personal research tool; "
+        "contact: github.com/ShrishChauhan/insightpulse)"
+    )
+
+    def __init__(self) -> None:
+        """Initialise HTTP session with descriptive User-Agent and DB client."""
+        self._db = SupabaseClient()
+        self._session = requests.Session()
+        self._session.headers.update({"User-Agent": self.JSON_USER_AGENT})
+
+    def scrape(self) -> list[ScrapedPost]:
+        """Fetch posts from all TARGET_SUBREDDITS via public JSON; return filtered list."""
+        start = time.time()
+        posts: list[ScrapedPost] = []
+        cutoff = _cutoff_utc()
+        errors: list[str] = []
+
+        for sub_name in config.TARGET_SUBREDDITS:
+            try:
+                fetched = self._scrape_subreddit(sub_name, cutoff)
+                posts.extend(fetched)
+            except Exception as exc:
+                errors.append(f"r/{sub_name}: {exc}")
+                print(f"[reddit_json] skipping r/{sub_name}: {exc}")
+            time.sleep(2)
+
+        duration_ms = int((time.time() - start) * 1000)
+        all_failed = len(errors) == len(config.TARGET_SUBREDDITS)
+        status = "failed" if all_failed else "success"
+
+        self._db.log_run(
+            agent_name=self.AGENT_NAME,
+            status=status,
+            input_summary=f"subreddits={len(config.TARGET_SUBREDDITS)}",
+            output_summary=f"posts={len(posts)} errors={len(errors)}",
+            duration_ms=duration_ms,
+            error="; ".join(errors) if errors else None,
+        )
+        return posts
+
+    def _scrape_subreddit(self, sub_name: str, cutoff: float) -> list[ScrapedPost]:
+        """Fetch up to PAGES pages of top-of-week posts from one subreddit."""
+        url = f"https://www.reddit.com/r/{sub_name}/top.json"
+        params: dict = {"t": "week", "limit": self.LIMIT}
+        raw_posts: list[dict] = []
+
+        for _ in range(self.PAGES):
+            resp = self._session.get(url, params=params, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()["data"]
+            raw_posts.extend(data["children"])
+            after = data.get("after")
+            if not after:
+                break
+            params["after"] = after
+            time.sleep(2)
+
+        posts: list[ScrapedPost] = []
+        for child in raw_posts:
+            p = child["data"]
+            if p.get("created_utc", 0) < cutoff:
+                continue
+            if p.get("score", 0) < self.MIN_SCORE:
+                continue
+
+            title = p.get("title", "")
+            body = p.get("selftext") or ""
+            full_text = f"{title} {body}"
+
+            posts.append(ScrapedPost(
+                id=f"reddit_{p['id']}",
+                title=title,
+                body=body,
+                comments=[],
+                subreddit=p.get("subreddit", sub_name),
+                score=int(p.get("score", 0)),
+                created_utc=float(p.get("created_utc", 0)),
+                url="https://reddit.com" + p.get("permalink", ""),
+                company_tags=_detect_company_tags(full_text),
+                source_type="reddit_json",
+                source_name=f"r/{sub_name}",
+            ))
+        return posts
+
+
+# ---------------------------------------------------------------------------
 # HNScraper
 # ---------------------------------------------------------------------------
 
@@ -386,8 +483,11 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
         "rss": [],
     }
 
+    # Reddit: prefer PRAW (richer comments) when credentials are set; else use JSON API
+    reddit_cls = RedditScraper if not config.USE_REDDIT_JSON else RedditJSONScraper
+
     for source, scraper_cls in [
-        ("reddit", RedditScraper),
+        ("reddit", reddit_cls),
         ("hn", HNScraper),
         ("rss", RSScraper),
     ]:
