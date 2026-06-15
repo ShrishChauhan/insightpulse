@@ -709,6 +709,183 @@ class RSScraper:
 
 
 # ---------------------------------------------------------------------------
+# PullPushScraper
+# ---------------------------------------------------------------------------
+
+class PullPushScraper:
+    """Fetches Reddit posts from PullPush archive API -- no credentials needed."""
+
+    AGENT_NAME = "scraper_pullpush"
+    BASE_URL = "https://api.pullpush.io/reddit/search/submission/"
+    SIZE = 100
+    MIN_SCORE = 3
+    MIN_BODY_LEN = 30
+    SKIP_SUBREDDITS = {"test", "pics", "funny", "gaming", "news", "worldnews"}
+
+    def __init__(self) -> None:
+        self._db = SupabaseClient()
+        self._session = requests.Session()
+        self._session.headers.update({"User-Agent": "InsightPulse/1.0 (research)"})
+
+    def scrape(self) -> list[ScrapedPost]:
+        """Search PullPush archive for each COMPANY_TAG; return posts from last DAYS_LOOKBACK days."""
+        start = time.time()
+        posts: list[ScrapedPost] = []
+        errors: list[str] = []
+        now_unix = int(datetime.now(timezone.utc).timestamp())
+        after_unix = int(_cutoff_utc())
+
+        for company in config.COMPANY_TAGS:
+            try:
+                fetched = self._search_company(company, after_unix, now_unix)
+                posts.extend(fetched)
+            except Exception as exc:
+                errors.append(f"{company}: {exc}")
+                print(f"[pullpush] skipping {company}: {exc}")
+            time.sleep(2)
+
+        duration_ms = int((time.time() - start) * 1000)
+        all_failed = len(errors) == len(config.COMPANY_TAGS)
+        self._db.log_run(
+            agent_name=self.AGENT_NAME,
+            status="failed" if all_failed else "success",
+            input_summary=f"companies={len(config.COMPANY_TAGS)}",
+            output_summary=f"posts={len(posts)} errors={len(errors)}",
+            duration_ms=duration_ms,
+            error="; ".join(errors) if errors else None,
+        )
+        return posts
+
+    def _search_company(self, company: str, after: int, before: int) -> list[ScrapedPost]:
+        """Fetch up to SIZE posts for one company keyword."""
+        params = {
+            "q": company,
+            "size": self.SIZE,
+            "sort": "desc",
+            "sort_type": "created_utc",
+            "after": after,
+            "before": before,
+        }
+        resp = self._session.get(self.BASE_URL, params=params, timeout=20)
+        if resp.status_code == 429:
+            print(f"[pullpush] rate limited for {company}, waiting 10s")
+            time.sleep(10)
+            resp = self._session.get(self.BASE_URL, params=params, timeout=20)
+        resp.raise_for_status()
+
+        posts: list[ScrapedPost] = []
+        for post in resp.json().get("data", []):
+            subreddit = post.get("subreddit", "")
+            if subreddit.lower() in self.SKIP_SUBREDDITS:
+                continue
+            score = post.get("score", 0)
+            if score < self.MIN_SCORE:
+                continue
+            body: str = post.get("selftext", "") or ""
+            if len(body) < self.MIN_BODY_LEN:
+                continue
+            title: str = post.get("title", "")
+            permalink = post.get("permalink", "")
+            url = f"https://reddit.com{permalink}"
+            created_utc = float(post.get("created_utc", 0))
+
+            posts.append(ScrapedPost(
+                id=f"pullpush_{abs(hash(permalink or title))}",
+                title=title,
+                body=body,
+                comments=[],
+                subreddit=subreddit,
+                score=score,
+                created_utc=created_utc,
+                url=url,
+                company_tags=_detect_company_tags(f"{title} {body}"),
+                source_type="pullpush",
+                source_name=f"r/{subreddit}",
+            ))
+        return posts
+
+
+# ---------------------------------------------------------------------------
+# HNAlgoliaScraper
+# ---------------------------------------------------------------------------
+
+class HNAlgoliaScraper:
+    """Fetches HN stories by date from HN Algolia search API -- no credentials needed."""
+
+    AGENT_NAME = "scraper_hn_algolia"
+    BASE_URL = "https://hn.algolia.com/api/v1/search_by_date"
+
+    def __init__(self) -> None:
+        self._db = SupabaseClient()
+        self._session = requests.Session()
+
+    def scrape(self) -> list[ScrapedPost]:
+        """Search HN Algolia for each COMPANY_TAG; return stories from last DAYS_LOOKBACK days."""
+        start = time.time()
+        posts: list[ScrapedPost] = []
+        errors: list[str] = []
+        after_unix = int(_cutoff_utc())
+
+        for company in config.COMPANY_TAGS:
+            try:
+                fetched = self._search_company(company, after_unix)
+                posts.extend(fetched)
+            except Exception as exc:
+                errors.append(f"{company}: {exc}")
+                print(f"[hn_algolia] skipping {company}: {exc}")
+            time.sleep(0.5)
+
+        duration_ms = int((time.time() - start) * 1000)
+        all_failed = len(errors) == len(config.COMPANY_TAGS)
+        self._db.log_run(
+            agent_name=self.AGENT_NAME,
+            status="failed" if all_failed else "success",
+            input_summary=f"companies={len(config.COMPANY_TAGS)}",
+            output_summary=f"posts={len(posts)} errors={len(errors)}",
+            duration_ms=duration_ms,
+            error="; ".join(errors) if errors else None,
+        )
+        return posts
+
+    def _search_company(self, company: str, after_unix: int) -> list[ScrapedPost]:
+        """Fetch stories mentioning company from HN Algolia."""
+        resp = self._session.get(
+            self.BASE_URL,
+            params={
+                "query": company,
+                "tags": "story",
+                "numericFilters": f"created_at_i>{after_unix}",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+
+        posts: list[ScrapedPost] = []
+        for hit in resp.json().get("hits", []):
+            story_id = hit.get("objectID", "")
+            title: str = hit.get("title") or ""
+            body: str = hit.get("story_text") or ""
+            url: str = hit.get("url") or f"https://news.ycombinator.com/item?id={story_id}"
+            score = hit.get("points") or 0
+            created_utc = float(hit.get("created_at_i") or 0)
+
+            posts.append(ScrapedPost(
+                id=f"hn_algolia_{story_id}",
+                title=title,
+                body=body,
+                comments=[],
+                subreddit="",
+                score=score,
+                created_utc=created_utc,
+                url=url,
+                company_tags=_detect_company_tags(f"{title} {body}"),
+                source_type="hn_algolia",
+                source_name="hn_algolia",
+            ))
+        return posts
+
+
+# ---------------------------------------------------------------------------
 # Unified entry point
 # ---------------------------------------------------------------------------
 
@@ -724,19 +901,23 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
     results: dict[str, list[ScrapedPost]] = {
         "bluesky": [],
         "hn": [],
+        "hn_algolia": [],
         "rss": [],
         "app_store": [],
         "youtube": [],
         "producthunt": [],
+        "pullpush": [],
     }
 
     for source, scraper_cls in [
         ("bluesky", BlueSkyScraper),
         ("hn", HNScraper),
+        ("hn_algolia", HNAlgoliaScraper),
         ("rss", RSScraper),
         ("app_store", AppStoreScraper),
         ("youtube", YouTubeScraper),
         ("producthunt", ProductHuntScraper),
+        ("pullpush", PullPushScraper),
     ]:
         try:
             results[source] = scraper_cls().scrape()
@@ -760,7 +941,7 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
     db.log_run(
         agent_name="scraper_all",
         status="success",
-        input_summary="sources=bluesky,hn,rss,app_store,youtube,producthunt",
+        input_summary="sources=bluesky,hn,hn_algolia,rss,app_store,youtube,producthunt,pullpush",
         output_summary=f"total={total} {source_summary}",
         duration_ms=duration_ms,
     )

@@ -83,7 +83,7 @@ thinking for APM/RPM recruiting.
 
 ## TECH STACK
 - Orchestration: LangGraph (stateful multi-agent)
-- Scheduling: APScheduler
+- Scheduling: APScheduler -- daily ingest 6AM UTC, pipeline Mon+Thu 9AM UTC, digest Sun 8PM UTC
 - Vector DB: Supabase pgvector (cloud, free tier)
 - Relational DB: Supabase PostgreSQL (replaces SQLite entirely)
 - Embeddings: sentence-transformers (all-MiniLM-L6-v2, local, free)

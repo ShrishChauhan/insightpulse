@@ -226,38 +226,56 @@ def _make_fake_post(i: int) -> ScrapedPost:
 
 
 if __name__ == "__main__":
-    print("[smoke test] initialising embedder...")
-    embedder = Embedder()
+    import sys
 
-    fake_posts = [_make_fake_post(i) for i in range(5)]
-    print(f"[smoke test] embedding {len(fake_posts)} fake posts...")
+    if "--real" in sys.argv:
+        print("\n[real embed] Running scrape_all() + embed_batch()...")
+        from core.scraper import scrape_all
+        scraped = scrape_all()
+        all_posts = []
+        for source, posts in scraped.items():
+            all_posts.extend(posts)
+        print(f"[real embed] Total posts to embed: {len(all_posts)}")
+        embedder = Embedder()
+        result = embedder.embed_batch(all_posts)
+        print(f"[real embed] embedded={result['embedded_count']} "
+              f"skipped={result['skipped_count']} "
+              f"errors={result['error_count']}")
+        stats = embedder.get_collection_stats()
+        print(f"[real embed] Total vectors now: {stats['total_vectors']}")
+    else:
+        print("[smoke test] initialising embedder...")
+        embedder = Embedder()
 
-    result = embedder.embed_batch(fake_posts)
-    print(
-        f"[smoke test] embed_batch: "
-        f"embedded={result['embedded_count']} "
-        f"skipped={result['skipped_count']} "
-        f"errors={result['error_count']} "
-        f"duration={result['duration_ms']}ms"
-    )
+        fake_posts = [_make_fake_post(i) for i in range(5)]
+        print(f"[smoke test] embedding {len(fake_posts)} fake posts...")
 
-    print("\n[smoke test] collection stats:")
-    stats = embedder.get_collection_stats()
-    print(f"  total_vectors : {stats['total_vectors']}")
-    print(f"  oldest        : {stats['oldest']}")
-    print(f"  newest        : {stats['newest']}")
-    print(f"  by_company    : {stats['by_company']}")
+        result = embedder.embed_batch(fake_posts)
+        print(
+            f"[smoke test] embed_batch: "
+            f"embedded={result['embedded_count']} "
+            f"skipped={result['skipped_count']} "
+            f"errors={result['error_count']} "
+            f"duration={result['duration_ms']}ms"
+        )
 
-    print("\n[smoke test] similarity search (top 3)...")
-    db = SupabaseClient()
-    query_vec = embedder._model.encode(
-        "Apple on-device AI privacy", show_progress_bar=False
-    ).tolist()
-    hits = db.similarity_search(query_vec, match_count=3)
-    print(f"  returned {len(hits)} hits:")
-    for h in hits:
-        preview = h.get("content", "")[:80].replace("\n", " ")
-        sim = h.get("similarity", 0)
-        print(f"    sim={sim:.4f}  {preview}...")
+        print("\n[smoke test] collection stats:")
+        stats = embedder.get_collection_stats()
+        print(f"  total_vectors : {stats['total_vectors']}")
+        print(f"  oldest        : {stats['oldest']}")
+        print(f"  newest        : {stats['newest']}")
+        print(f"  by_company    : {stats['by_company']}")
 
-    print("\n[smoke test] PASS")
+        print("\n[smoke test] similarity search (top 3)...")
+        db = SupabaseClient()
+        query_vec = embedder._model.encode(
+            "Apple on-device AI privacy", show_progress_bar=False
+        ).tolist()
+        hits = db.similarity_search(query_vec, match_count=3)
+        print(f"  returned {len(hits)} hits:")
+        for h in hits:
+            preview = h.get("content", "")[:80].replace("\n", " ")
+            sim = h.get("similarity", 0)
+            print(f"    sim={sim:.4f}  {preview}...")
+
+        print("\n[smoke test] PASS")

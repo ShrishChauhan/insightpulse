@@ -132,4 +132,13 @@ RSS_FEEDS = [
     {"name": "9to5Mac",           "url": "https://9to5mac.com/feed/"},
     {"name": "AppleInsider",      "url": "https://appleinsider.com/rss/news/"},
     {"name": "MacRumors",         "url": "https://www.macrumors.com/macrumors.xml"},
+    # Google News RSS — per-company topic feeds, no auth needed
+    {"name": "GoogleNews_Apple",     "url": "https://news.google.com/rss/search?q=apple+product+features&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "GoogleNews_Google",    "url": "https://news.google.com/rss/search?q=google+product+launch&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "GoogleNews_Spotify",   "url": "https://news.google.com/rss/search?q=spotify+features+users&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "GoogleNews_Microsoft", "url": "https://news.google.com/rss/search?q=microsoft+product+update&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "GoogleNews_Meta",      "url": "https://news.google.com/rss/search?q=meta+facebook+product&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "GoogleNews_Netflix",   "url": "https://news.google.com/rss/search?q=netflix+features+subscribers&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "GoogleNews_Amazon",    "url": "https://news.google.com/rss/search?q=amazon+product+users&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "GoogleNews_Notion",    "url": "https://news.google.com/rss/search?q=notion+app+features&hl=en-US&gl=US&ceid=US:en"},
 ]

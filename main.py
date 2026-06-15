@@ -17,6 +17,23 @@ def _build_orchestrator():
     return OrchestratorAgent()
 
 
+def _daily_ingest_job() -> None:
+    """Scrape all sources and embed results into Supabase."""
+    print("[scheduler] Starting daily scrape + embed...")
+    from core.scraper import scrape_all
+    from core.embedder import Embedder
+
+    scraped = scrape_all()
+    all_posts = []
+    for source, posts in scraped.items():
+        all_posts.extend(posts)
+    print(f"[scheduler] Scraped {len(all_posts)} posts")
+
+    embedder = Embedder()
+    result = embedder.embed_batch(all_posts)
+    print(f"[scheduler] Embedded: {result}")
+
+
 def run_scheduler() -> None:
     """Start APScheduler: run_weekly() every Monday and Thursday at 9 AM."""
     from apscheduler.schedulers.blocking import BlockingScheduler
@@ -25,6 +42,14 @@ def run_scheduler() -> None:
     orchestrator = _build_orchestrator()
     notifier = Notifier()
     scheduler = BlockingScheduler(timezone="UTC")
+
+    scheduler.add_job(
+        func=_daily_ingest_job,
+        trigger="cron",
+        hour=6,
+        minute=0,
+        id="insightpulse_daily_ingest",
+    )
 
     scheduler.add_job(
         func=lambda: orchestrator.run_weekly(dry_run=False),
@@ -64,8 +89,10 @@ def run_scheduler() -> None:
         id="insightpulse_weekly_digest",
     )
 
-    print("[main] InsightPulse scheduler started. Runs Monday + Thursday at 09:00 UTC.")
-    print("[main] Weekly digest fires every Sunday at 20:00 UTC.")
+    print("[main] InsightPulse scheduler started.")
+    print("[main] Daily ingest: every day at 06:00 UTC.")
+    print("[main] Pipeline: Monday + Thursday at 09:00 UTC.")
+    print("[main] Weekly digest: every Sunday at 20:00 UTC.")
     print("[main] Press Ctrl+C to stop.")
     try:
         scheduler.start()
@@ -121,6 +148,12 @@ def main() -> None:
         default=False,
         help="Start the APScheduler cron (blocking)",
     )
+    parser.add_argument(
+        "--ingest",
+        action="store_true",
+        default=False,
+        help="Run scrape + embed pipeline immediately and exit",
+    )
 
     args = parser.parse_args()
 
@@ -133,11 +166,15 @@ def main() -> None:
         input_summary=(
             f"startup dry_run={args.dry_run} "
             f"topic={args.topic} company={args.company} "
-            f"schedule={args.schedule}"
+            f"schedule={args.schedule} ingest={args.ingest}"
         ),
         output_summary="InsightPulse started",
     )
     print("[main] InsightPulse started.")
+
+    if args.ingest:
+        _daily_ingest_job()
+        sys.exit(0)
 
     if args.schedule:
         run_scheduler()
