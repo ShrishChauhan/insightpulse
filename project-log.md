@@ -433,11 +433,21 @@ python main.py --dry-run --topic "Spotify pricing" --company "spotify"
 
 ---
 
-## NEXT SESSION TASK
-Session 10: Full end-to-end pipeline test with real data.
-1. Run core/scraper.py scrape_all() against live HN + RSS (skip Reddit) — print post count.
-2. Run core/embedder.py embed_batch() on scraped posts — confirm Supabase embeddings row count > 0.
-3. Run main.py --dry-run --topic [real topic from scrape] --company [matching company].
-   Target: retrieval returns >5 chunks, critic score >= 18, post_node reaches BufferPoster.post(dry_run=True),
-   Supabase posts row created, PDF written to data/briefs/.
-4. Open dashboard/app.py and verify all 4 tabs render real data (not empty placeholders).
+## SESSION 11 — HANDOFF SUMMARY (2026-06-15)
+
+**Files modified (5):**
+1. `core/scraper.py` — RedditJSONScraper class added (public .json endpoint, descriptive User-Agent, 2s sleep, after= pagination, score>=5, 7-day filter). scrape_all() routes via USE_REDDIT_JSON flag.
+2. `config.py` — USE_REDDIT_JSON = not bool(REDDIT_CLIENT_ID) added.
+3. `.env` — REDDIT_CLIENT_ID cleared (was placeholder string); USE_REDDIT_JSON is now True.
+4. `dashboard/app.py` — full redesign: Inter font, dark sidebar nav (#1a1b1e) with radio buttons styled as active nav items (#E63946 left border), metric cards with colored borders, Plotly bar/line charts, status badges, relative timestamps, ProgressColumn for Score, Run Logs summary row, empty states with emoji.
+5. `docs/design.md` — created: design system reference (colors, typography, spacing, components).
+6. `CLAUDE.md` — 2 Learning Log entries added (Reddit JSON + cloud 403, Supabase free-tier pause).
+
+**Reddit 403 diagnosis:**
+RedditJSONScraper routes correctly ([reddit_json] log prefix confirmed). Reddit returns 403 for unauthenticated requests from cloud/VPN IPs in 2026. Fix: get Reddit OAuth credentials (PRAW) or run from residential IP. HN + RSS remain active sources (252 vectors in Supabase).
+
+**Dashboard status:**
+Complete. HTTP 200 confirmed. All 4 tabs functional. Plotly installed.
+
+**Next recommended task:**
+Get Reddit API credentials (reddit.com/prefs/apps → script app) and set REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET in .env to unlock Reddit data. Then run a calibration pass: embed fresh data, run main.py --dry-run twice on different topics, review critic scores, adjust CRITIC_THRESHOLDS in config.py if needed.
