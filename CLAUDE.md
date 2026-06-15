@@ -137,4 +137,6 @@ Format: one line, under 15 words, no explanation. Never remove entries.
 - Always verify .env not staged before git push — use git status to confirm. Also add .claude/ to .gitignore to keep local Claude Code config out of the repo.
 - Groq/Llama returns literal control characters in JSON strings — _parse_json() uses json.loads(strict=False) as fallback when strict parse fails; Python's strict=True is the default and rejects these.
 - Supabase free tier pauses after ~7 days of inactivity — restore via MCP mcp__supabase__restore_project before any session that follows a gap.
-- Reddit public JSON: append .json to any subreddit URL, use descriptive User-Agent not browser-mimicking string, 2s sleep between requests, use after= param for pagination across pages. Note: Reddit returns 403 from cloud/VPN IPs — needs residential IP or OAuth credentials to reliably access.
+- Reddit permanently closed all API access May 30 2026. Replaced with Bluesky (social), YouTube (consumer video comments), ProductHunt (launch discourse), App Store RSS (direct app reviews), HN, RSS. No reddit code remains in the project.
+- Bluesky public.api.bsky.app/xrpc/app.bsky.feed.searchPosts returns 403 from non-residential IPs (same pattern as Reddit). Works on a home IP; from a cloud/VPN IP add auth via BLUESKY_APP_PASSWORD if needed.
+- Apple App Store RSS feed: first entry in feed.entry[] is app metadata (no im:rating key) — skip it; only entries with im:rating are user reviews.

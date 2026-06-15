@@ -21,10 +21,12 @@ ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 # Anthropic
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
-# Reddit
-REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID")
-REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET")
-REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "InsightPulse/1.0")
+# YouTube Data API v3 (free key from Google Cloud Console)
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+YOUTUBE_DAILY_QUOTA_LIMIT = 8000  # stay under free tier daily cap of 10,000 units
+
+# ProductHunt (Developer Token from producthunt.com/v2/oauth/applications)
+PRODUCTHUNT_TOKEN = os.getenv("PRODUCTHUNT_TOKEN")
 
 # Alerts
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
@@ -58,12 +60,6 @@ for _name, _value in _REQUIRED.items():
         )
 
 # App config (no secrets — hardcoded is fine)
-TARGET_SUBREDDITS = [
-    "apple", "google", "spotify", "notion",
-    "microsoft", "netflix", "amazon",
-    "productivity", "startups"
-]
-
 COMPANY_TAGS = [
     "apple", "google", "spotify", "notion",
     "microsoft", "netflix", "amazon", "meta"
@@ -72,6 +68,16 @@ COMPANY_TAGS = [
 CRITIC_THRESHOLDS = {
     "auto_post": 18,
     "soft_approval": 12
+}
+
+# App Store app IDs — Apple public RSS feeds, no credentials needed
+APP_STORE_IDS = {
+    "spotify": "324684580",
+    "notion": "1232780281",
+    "microsoft": "586003813",   # Microsoft 365
+    "google": "544007664",      # Google app
+    "amazon": "297606951",
+    "netflix": "363590051",
 }
 
 # LLM — kept for backwards compat; prefer GEMINI_MODEL / ANTHROPIC_MODEL via LLMClient
@@ -114,13 +120,16 @@ SENTIMENT_WORDS = {
     ],
 }
 
-# Reddit scraper selection — JSON endpoint needs no credentials; PRAW needs CLIENT_ID
-USE_REDDIT_JSON = not bool(REDDIT_CLIENT_ID)
-
 RSS_FEEDS = [
-    {"name": "TechCrunch",   "url": "https://techcrunch.com/feed/"},
-    {"name": "TheVerge",     "url": "https://www.theverge.com/rss/index.xml"},
-    {"name": "HackerNews",   "url": "https://hnrss.org/frontpage"},
-    {"name": "ArsTechnica",  "url": "https://feeds.arstechnica.com/arstechnica/index"},
-    {"name": "Wired",        "url": "https://www.wired.com/feed/rss"},
+    {"name": "TechCrunch",        "url": "https://techcrunch.com/feed/"},
+    {"name": "TheVerge",          "url": "https://www.theverge.com/rss/index.xml"},
+    {"name": "HackerNews",        "url": "https://hnrss.org/frontpage"},
+    {"name": "ArsTechnica",       "url": "https://feeds.arstechnica.com/arstechnica/index"},
+    {"name": "ArsTechnicaLab",    "url": "https://feeds.arstechnica.com/arstechnica/technology-lab"},
+    {"name": "Wired",             "url": "https://www.wired.com/feed/rss"},
+    {"name": "VentureBeat",       "url": "https://venturebeat.com/feed/"},
+    {"name": "AndroidAuthority",  "url": "https://www.androidauthority.com/feed/"},
+    {"name": "9to5Mac",           "url": "https://9to5mac.com/feed/"},
+    {"name": "AppleInsider",      "url": "https://appleinsider.com/rss/news/"},
+    {"name": "MacRumors",         "url": "https://www.macrumors.com/macrumors.xml"},
 ]
