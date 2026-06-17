@@ -60,6 +60,27 @@ def run_scheduler() -> None:
         id="insightpulse_weekly",
     )
 
+    def _gold_mining_job() -> None:
+        print("[scheduler] Starting weekly Gold Mining scrape...")
+        from core.scraper import GoldMiningScraper
+        from core.embedder import Embedder
+
+        posts = GoldMiningScraper().scrape()
+        print(f"[scheduler] Gold Mining: scraped {len(posts)} Reddit pain threads")
+        if posts:
+            embedder = Embedder()
+            result = embedder.embed_batch(posts)
+            print(f"[scheduler] Gold Mining: embedded {result}")
+
+    scheduler.add_job(
+        func=_gold_mining_job,
+        trigger="cron",
+        day_of_week="sun",
+        hour=7,
+        minute=0,
+        id="insightpulse_gold_mining",
+    )
+
     def _weekly_digest_job() -> None:
         from datetime import datetime, timezone, timedelta
         from core.db import SupabaseClient as _DB
@@ -92,6 +113,7 @@ def run_scheduler() -> None:
     print("[main] InsightPulse scheduler started.")
     print("[main] Daily ingest: every day at 06:00 UTC.")
     print("[main] Pipeline: Monday + Thursday at 09:00 UTC.")
+    print("[main] Gold Mining: every Sunday at 07:00 UTC.")
     print("[main] Weekly digest: every Sunday at 20:00 UTC.")
     print("[main] Press Ctrl+C to stop.")
     try:

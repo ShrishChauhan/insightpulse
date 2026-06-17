@@ -73,7 +73,9 @@ class LinkedInPoster:
                 output_summary="dry_run -- no LinkedIn API call made",
             )
             print(f"[linkedin_poster] DRY RUN -- would post to LinkedIn ({len(content)} chars):")
-            print(f"  {content[:300]}{'...' if len(content) > 300 else ''}")
+            # Encode safely for Windows terminal (cp1252 rejects emoji)
+            safe_preview = content[:300].encode('ascii', errors='replace').decode('ascii')
+            print(f"  {safe_preview}{'...' if len(content) > 300 else ''}")
             return PostResult(
                 success=True, post_id=None,
                 status="dry_run", queued_at=None,

@@ -4,12 +4,14 @@ All scrapers return List[ScrapedPost] and log each run to Supabase via
 core/db.py. Never raises — failed sources are skipped and logged.
 """
 
+import re
 import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import feedparser
 import requests
+from bs4 import BeautifulSoup
 from typing_extensions import TypedDict
 
 import config
@@ -31,7 +33,7 @@ class ScrapedPost(TypedDict):
     created_utc: float
     url: str
     company_tags: list[str]
-    source_type: str   # "bluesky" | "youtube" | "producthunt" | "app_store" | "hn" | "rss"
+    source_type: str   # "bluesky" | "youtube" | "producthunt" | "app_store" | "hn" | "rss" | "reddit_gold"
     source_name: str   # human-readable source label
 
 
@@ -629,9 +631,12 @@ class RSScraper:
     """Parses RSS feeds from RSS_FEEDS config; normalises into ScrapedPost."""
 
     AGENT_NAME = "scraper_rss"
+    FULL_CONTENT_SOURCES = {"TheVerge_Reviews", "Engadget", "CNET", "ArsTechnica"}
 
     def __init__(self) -> None:
         self._db = SupabaseClient()
+        self._session = requests.Session()
+        self._session.headers.update({"User-Agent": "InsightPulse/1.0"})
 
     def scrape(self) -> list[ScrapedPost]:
         """Parse all RSS_FEEDS; return posts from the last DAYS_LOOKBACK days."""
@@ -675,8 +680,15 @@ class RSScraper:
                 continue
 
             title: str = entry.get("title", "")
-            body: str = entry.get("summary", "")
             url_val: str = entry.get("link", "")
+            body: str = entry.get("summary", "")
+
+            if source_name in self.FULL_CONTENT_SOURCES and url_val:
+                full = self._fetch_full_content(url_val)
+                if full:
+                    body = full
+                time.sleep(1)
+
             created_utc = published.timestamp() if published else 0.0
             entry_id = entry.get("id") or url_val or f"rss_{hash(title)}"
 
@@ -696,6 +708,26 @@ class RSScraper:
 
         return posts
 
+    def _fetch_full_content(self, url: str) -> Optional[str]:
+        """Fetch full article text via HTTP; return None on failure or if too short."""
+        try:
+            resp = self._session.get(url, timeout=15)
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for selector in [
+                "article",
+                ".article-body",
+                ".entry-content",
+                ".post-content",
+                "[itemprop='articleBody']",
+            ]:
+                content = soup.select_one(selector)
+                if content and len(content.get_text()) > 500:
+                    return content.get_text(separator=" ", strip=True)
+        except Exception:
+            pass
+        return None
+
     @staticmethod
     def _parse_date(entry) -> Optional[datetime]:
         for attr in ("published_parsed", "updated_parsed"):
@@ -709,15 +741,15 @@ class RSScraper:
 
 
 # ---------------------------------------------------------------------------
-# PullPushScraper
+# ArcticShiftScraper
 # ---------------------------------------------------------------------------
 
-class PullPushScraper:
-    """Fetches Reddit posts from PullPush archive API -- no credentials needed."""
+class ArcticShiftScraper:
+    """Fetches Reddit posts from ArcticShift archive API -- no credentials needed."""
 
-    AGENT_NAME = "scraper_pullpush"
-    BASE_URL = "https://api.pullpush.io/reddit/search/submission/"
-    SIZE = 100
+    AGENT_NAME = "scraper_arctic_shift"
+    BASE_URL = "https://arctic-shift.photon-reddit.com/api/posts/search"
+    LIMIT = 100
     MIN_SCORE = 3
     MIN_BODY_LEN = 30
     SKIP_SUBREDDITS = {"test", "pics", "funny", "gaming", "news", "worldnews"}
@@ -728,20 +760,21 @@ class PullPushScraper:
         self._session.headers.update({"User-Agent": "InsightPulse/1.0 (research)"})
 
     def scrape(self) -> list[ScrapedPost]:
-        """Search PullPush archive for each COMPANY_TAG; return posts from last DAYS_LOOKBACK days."""
+        """Search ArcticShift archive for each COMPANY_TAG; return posts from last DAYS_LOOKBACK days."""
         start = time.time()
         posts: list[ScrapedPost] = []
         errors: list[str] = []
-        now_unix = int(datetime.now(timezone.utc).timestamp())
-        after_unix = int(_cutoff_utc())
+        seven_days_ago = (
+            datetime.now(timezone.utc) - timedelta(days=config.DAYS_LOOKBACK)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         for company in config.COMPANY_TAGS:
             try:
-                fetched = self._search_company(company, after_unix, now_unix)
+                fetched = self._search_company(company, seven_days_ago)
                 posts.extend(fetched)
             except Exception as exc:
                 errors.append(f"{company}: {exc}")
-                print(f"[pullpush] skipping {company}: {exc}")
+                print(f"[arctic_shift] skipping {company}: {exc}")
             time.sleep(2)
 
         duration_ms = int((time.time() - start) * 1000)
@@ -756,21 +789,13 @@ class PullPushScraper:
         )
         return posts
 
-    def _search_company(self, company: str, after: int, before: int) -> list[ScrapedPost]:
-        """Fetch up to SIZE posts for one company keyword."""
-        params = {
-            "q": company,
-            "size": self.SIZE,
-            "sort": "desc",
-            "sort_type": "created_utc",
-            "after": after,
-            "before": before,
-        }
-        resp = self._session.get(self.BASE_URL, params=params, timeout=20)
-        if resp.status_code == 429:
-            print(f"[pullpush] rate limited for {company}, waiting 10s")
-            time.sleep(10)
-            resp = self._session.get(self.BASE_URL, params=params, timeout=20)
+    def _search_company(self, company: str, after: str) -> list[ScrapedPost]:
+        """Fetch up to LIMIT posts for one company keyword."""
+        resp = self._session.get(
+            self.BASE_URL,
+            params={"q": company, "limit": self.LIMIT, "after": after},
+            timeout=20,
+        )
         resp.raise_for_status()
 
         posts: list[ScrapedPost] = []
@@ -790,7 +815,7 @@ class PullPushScraper:
             created_utc = float(post.get("created_utc", 0))
 
             posts.append(ScrapedPost(
-                id=f"pullpush_{abs(hash(permalink or title))}",
+                id=f"arctic_shift_{abs(hash(permalink or title))}",
                 title=title,
                 body=body,
                 comments=[],
@@ -799,7 +824,7 @@ class PullPushScraper:
                 created_utc=created_utc,
                 url=url,
                 company_tags=_detect_company_tags(f"{title} {body}"),
-                source_type="pullpush",
+                source_type="arctic_shift",
                 source_name=f"r/{subreddit}",
             ))
         return posts
@@ -886,6 +911,155 @@ class HNAlgoliaScraper:
 
 
 # ---------------------------------------------------------------------------
+# GoldMiningScraper
+# ---------------------------------------------------------------------------
+
+class GoldMiningScraper:
+    """Searches Google for Reddit pain-point threads via Serper.dev, then fetches
+    comments via Arctic Shift archive API (bypasses Reddit's IP-level block). Requires SERPER_API_KEY."""
+
+    AGENT_NAME = "scraper_gold_mining"
+    SERPER_URL = "https://google.serper.dev/search"
+    ARCTIC_SHIFT_URL = "https://arctic-shift.photon-reddit.com/api/comments/search"
+    ARCTIC_THROTTLE_S = 1
+    MIN_BODY_LEN = 30
+    MAX_COMMENTS = 20
+
+    def __init__(self) -> None:
+        self._db = SupabaseClient()
+        self._session = requests.Session()
+        # Reddit blocks the generic InsightPulse UA — use a browser UA for .json fetches
+        self._session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            )
+        })
+
+    def scrape(self) -> list[ScrapedPost]:
+        """Mine all companies defined in config.GOLD_MINING_QUERIES."""
+        if not config.SERPER_API_KEY:
+            print("[gold_mining] skipping: SERPER_API_KEY not configured")
+            return []
+
+        start = time.time()
+        posts: list[ScrapedPost] = []
+        errors: list[str] = []
+
+        for company in config.GOLD_MINING_QUERIES:
+            try:
+                fetched = self.mine(company)
+                posts.extend(fetched)
+            except Exception as exc:
+                errors.append(f"{company}: {exc}")
+                print(f"[gold_mining] skipping {company}: {exc}")
+
+        duration_ms = int((time.time() - start) * 1000)
+        all_failed = bool(errors) and len(errors) == len(config.GOLD_MINING_QUERIES)
+        self._db.log_run(
+            agent_name=self.AGENT_NAME,
+            status="failed" if all_failed else "success",
+            input_summary=f"companies={len(config.GOLD_MINING_QUERIES)}",
+            output_summary=f"posts={len(posts)} errors={len(errors)}",
+            duration_ms=duration_ms,
+            error="; ".join(errors) if errors else None,
+        )
+        return posts
+
+    def mine(self, company: str, query_overrides: Optional[list[str]] = None) -> list[ScrapedPost]:
+        """Mine one company. Called by scrape() and directly by the CLI."""
+        queries = query_overrides or config.GOLD_MINING_QUERIES.get(company, [])
+        results = self._search(company, queries)
+        posts: list[ScrapedPost] = []
+        for result in results:
+            post = self._fetch_thread(result, company)
+            if post:
+                posts.append(post)
+            time.sleep(self.ARCTIC_THROTTLE_S)
+        return posts
+
+    def _search(self, company: str, queries: list[str]) -> list[dict]:
+        """POST each query to Serper, extract Reddit thread results, return deduped list."""
+        seen: dict[str, dict] = {}
+        headers = {
+            "X-API-KEY": config.SERPER_API_KEY,
+            "Content-Type": "application/json",
+        }
+        for q in queries:
+            try:
+                resp = self._session.post(
+                    self.SERPER_URL,
+                    headers=headers,
+                    json={"q": f"site:reddit.com {q}", "num": config.GOLD_MINING_MAX_RESULTS},
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                for result in resp.json().get("organic", []):
+                    link: str = result.get("link", "")
+                    if "reddit.com/r/" in link and "/comments/" in link and link not in seen:
+                        seen[link] = {
+                            "link": link,
+                            "title": result.get("title", ""),
+                            "snippet": result.get("snippet", ""),
+                        }
+                time.sleep(1)
+            except Exception as exc:
+                print(f"[gold_mining] serper query failed ({q!r}): {exc}")
+        return list(seen.values())
+
+    def _fetch_thread(self, result: dict, company: str) -> Optional[ScrapedPost]:
+        """Fetch comments for a Reddit thread via Arctic Shift archive API."""
+        url: str = result["link"]
+        title: str = result.get("title", "")
+        snippet: str = result.get("snippet", "")
+
+        m = re.search(r"/comments/([a-z0-9]+)", url)
+        if not m:
+            return None
+        post_id = m.group(1)
+
+        subreddit_m = re.search(r"/r/([^/]+)/", url)
+        subreddit = subreddit_m.group(1) if subreddit_m else ""
+
+        try:
+            resp = self._session.get(
+                self.ARCTIC_SHIFT_URL,
+                params={"link_id": f"t3_{post_id}", "limit": self.MAX_COMMENTS},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            comment_data = resp.json().get("data") or []
+
+            comments: list[str] = [
+                c["body"]
+                for c in comment_data
+                if c.get("body") not in ("[removed]", "[deleted]", "")
+                and len(c.get("body", "")) >= self.MIN_BODY_LEN
+            ][:self.MAX_COMMENTS]
+
+            body = snippet if len(snippet) >= self.MIN_BODY_LEN else title
+            full_text = f"{title} {body} {' '.join(comments)}"
+
+            return ScrapedPost(
+                id=f"reddit_gold_{post_id}",
+                title=title,
+                body=body,
+                comments=comments,
+                subreddit=f"r/{subreddit}",
+                score=0,
+                created_utc=0.0,
+                url=url,
+                company_tags=_detect_company_tags(full_text) or [company],
+                source_type="reddit_gold",
+                source_name=f"r/{subreddit}",
+            )
+        except Exception as exc:
+            print(f"[gold_mining] failed to fetch {url}: {exc}")
+            return None
+
+
+# ---------------------------------------------------------------------------
 # Unified entry point
 # ---------------------------------------------------------------------------
 
@@ -906,7 +1080,8 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
         "app_store": [],
         "youtube": [],
         "producthunt": [],
-        "pullpush": [],
+        "arctic_shift": [],
+        "gold_mining": [],
     }
 
     for source, scraper_cls in [
@@ -917,7 +1092,8 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
         ("app_store", AppStoreScraper),
         ("youtube", YouTubeScraper),
         ("producthunt", ProductHuntScraper),
-        ("pullpush", PullPushScraper),
+        ("arctic_shift", ArcticShiftScraper),
+        ("gold_mining", GoldMiningScraper),
     ]:
         try:
             results[source] = scraper_cls().scrape()
@@ -941,7 +1117,7 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
     db.log_run(
         agent_name="scraper_all",
         status="success",
-        input_summary="sources=bluesky,hn,hn_algolia,rss,app_store,youtube,producthunt,pullpush",
+        input_summary="sources=bluesky,hn,hn_algolia,rss,app_store,youtube,producthunt,arctic_shift,gold_mining",
         output_summary=f"total={total} {source_summary}",
         duration_ms=duration_ms,
     )

@@ -200,9 +200,9 @@ class WriterAgent:
     def _validate_post(self, raw: dict) -> Optional[str]:
         """Return a correction string if the post fails validation, else None."""
         post_text = raw.get("linkedin_post", "")
-        if len(post_text) > 1300:
+        if len(post_text) > 3000:
             return (
-                f"Post is {len(post_text)} characters -- must be under 1300. Shorten it."
+                f"Post is {len(post_text)} characters -- must be under 3000. Shorten it."
             )
         if not raw.get("hashtags"):
             return "No hashtags present -- add 3-5 relevant hashtags on the last line."

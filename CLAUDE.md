@@ -122,7 +122,7 @@ thinking for APM/RPM recruiting.
 Claude appends lessons here automatically when workarounds are found.
 Format: one line, under 15 words, no explanation. Never remove entries.
 -->
-- Windows cp1252 terminal rejects Unicode — use ASCII in print statements.
+- Windows cp1252 terminal rejects Unicode — use ASCII in print statements. For emoji-containing content: `safe = s.encode('ascii', errors='replace').decode('ascii')`.
 - IVFFLAT index must have roughly 1 list per 1000 rows; building with lists > row_count causes ANN search to return empty silently — drop index for dev, add back at scale.
 - Use provider abstraction in llm_client.py — swap LLM via PROVIDER config, never by editing agent code.
 - Use google.genai SDK not google.generativeai — latter is deprecated and will stop receiving updates.

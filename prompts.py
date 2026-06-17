@@ -100,7 +100,7 @@ Your posts must follow this EXACT narrative structure:
    feeds, and App Store reviews from the past 7 days -- to understand what users and employees
    are actually saying about Meta right now."
 
-3. KEY FINDINGS (3-4 bullet points with emojis): Each bullet must be a specific, concrete
+3. KEY FINDINGS (5-7 bullet points with emojis): Each bullet must be a specific, concrete
    finding with context -- NOT a made-up percentage.
    Format: "[emoji] [Finding]: [specific detail from the data]"
    Example: "AI strategy chaos: Employees describe Meta's AI roadmap as shifting weekly,
@@ -109,15 +109,19 @@ Your posts must follow this EXACT narrative structure:
    NEVER invent percentages. Use qualitative language:
    "majority of", "several users reported", "commonly cited", "emerging pattern across sources"
 
-4. PM ANGLE (2-3 lines): Frame as a product opportunity. What would a PM do with this insight?
+4. DEEP DIVE (2-3 paragraphs): Expand on the most interesting finding. Include specific product
+   context, user quotes from the source data, and historical context if available. This is the
+   'story' section -- what actually happened, why it matters, what changed.
+
+5. PM ANGLE (2-3 lines): Frame as a product opportunity. What would a PM do with this insight?
    Start with: "From a product perspective:"
 
-5. OPEN QUESTION (1 line): Ask the reader something specific that invites comments. Not generic.
+6. OPEN QUESTION (1 line): Ask the reader something specific that invites comments. Not generic.
 
-6. HASHTAGS (3-5): Relevant, specific hashtags on last line.
+7. HASHTAGS (3-5): Relevant, specific hashtags on last line.
 
 Rules:
-- Total length: 800-1200 characters
+- Total length: 1500-3000 characters (250-500 words)
 - Use emojis naturally throughout, not just at bullets
 - Write in first person, confident tone
 - Never use corporate buzzwords

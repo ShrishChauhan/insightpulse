@@ -40,6 +40,9 @@ LINKEDIN_ACCESS_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN")
 LINKEDIN_PERSON_URN = os.getenv("LINKEDIN_PERSON_URN")
 LINKEDIN_TOKEN_CREATED = os.getenv("LINKEDIN_TOKEN_CREATED", "2026-06-13")
 
+# Serper.dev (Google SERP API — free 2500 lifetime queries, no CC required)
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+
 # Startup validation — fail loudly at import time, not deep in the call stack
 _REQUIRED: dict[str, str | None] = {
     "SUPABASE_URL": SUPABASE_URL,
@@ -64,6 +67,51 @@ COMPANY_TAGS = [
     "apple", "google", "spotify", "notion",
     "microsoft", "netflix", "amazon", "meta"
 ]
+
+GOLD_MINING_MAX_RESULTS = 10  # Serper results per query
+
+GOLD_MINING_QUERIES: dict[str, list[str]] = {
+    "spotify": [
+        '"Spotify" "I hate" OR "broken" OR "should fix"',
+        '"Spotify" "why does" OR "anyone else" OR "frustrating"',
+        '"Spotify" "feature request" OR "wish they would"',
+    ],
+    "apple": [
+        '"Apple" "I hate" OR "broken" OR "should fix"',
+        '"Apple" "why does" OR "anyone else" OR "frustrating"',
+        '"Apple" "feature request" OR "wish they would"',
+    ],
+    "google": [
+        '"Google" "I hate" OR "broken" OR "should fix"',
+        '"Google" "why does" OR "anyone else" OR "frustrating"',
+        '"Google" "feature request" OR "wish they would"',
+    ],
+    "notion": [
+        '"Notion" "I hate" OR "broken" OR "should fix"',
+        '"Notion" "why does" OR "anyone else" OR "frustrating"',
+        '"Notion" "feature request" OR "wish they would"',
+    ],
+    "microsoft": [
+        '"Microsoft" "I hate" OR "broken" OR "should fix"',
+        '"Microsoft" "why does" OR "anyone else" OR "frustrating"',
+        '"Microsoft" "feature request" OR "wish they would"',
+    ],
+    "netflix": [
+        '"Netflix" "I hate" OR "broken" OR "should fix"',
+        '"Netflix" "why does" OR "anyone else" OR "frustrating"',
+        '"Netflix" "feature request" OR "wish they would"',
+    ],
+    "amazon": [
+        '"Amazon" "I hate" OR "broken" OR "should fix"',
+        '"Amazon" "why does" OR "anyone else" OR "frustrating"',
+        '"Amazon" "feature request" OR "wish they would"',
+    ],
+    "meta": [
+        '"Meta" OR "Facebook" "I hate" OR "broken" OR "should fix"',
+        '"Meta" OR "Facebook" "why does" OR "anyone else" OR "frustrating"',
+        '"Meta" OR "Facebook" "feature request" OR "wish they would"',
+    ],
+}
 
 CRITIC_THRESHOLDS = {
     "auto_post": 18,
@@ -141,4 +189,10 @@ RSS_FEEDS = [
     {"name": "GoogleNews_Netflix",   "url": "https://news.google.com/rss/search?q=netflix+features+subscribers&hl=en-US&gl=US&ceid=US:en"},
     {"name": "GoogleNews_Amazon",    "url": "https://news.google.com/rss/search?q=amazon+product+users&hl=en-US&gl=US&ceid=US:en"},
     {"name": "GoogleNews_Notion",    "url": "https://news.google.com/rss/search?q=notion+app+features&hl=en-US&gl=US&ceid=US:en"},
+    {"name": "TheVerge_Reviews",     "url": "https://www.theverge.com/rss/reviews/index.xml"},
+    {"name": "Engadget",             "url": "https://www.engadget.com/rss.xml"},
+    {"name": "CNET",                 "url": "https://www.cnet.com/rss/news/"},
+    {"name": "9to5Google",           "url": "https://9to5google.com/feed/"},
+    {"name": "GSMArena",             "url": "https://www.gsmarena.com/rss-news-reviews.php3"},
+    {"name": "AndroidPolice",        "url": "https://www.androidpolice.com/feed/"},
 ]
