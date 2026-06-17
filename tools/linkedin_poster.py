@@ -42,6 +42,9 @@ class LinkedInPoster:
         self._person_urn = config.LINKEDIN_PERSON_URN
         self._org_urn = config.LINKEDIN_ORGANIZATION_URN
         self._token_created = config.LINKEDIN_TOKEN_CREATED
+        self._zernio_key = config.ZERNIO_API_KEY
+        self._zernio_account_id = config.ZERNIO_ACCOUNT_ID
+        self._zernio_org_urn = config.ZERNIO_ORGANIZATION_URN
 
     # ------------------------------------------------------------------
     # Public API
@@ -54,42 +57,18 @@ class LinkedInPoster:
         dry_run=False: POST via configured posting route if rate limit not exceeded.
         Returns PostResult -- never raises.
         """
-        # Route 1: Zernio (bypasses LinkedIn API approval requirement)
-        if config.ZERNIO_API_KEY and config.ZERNIO_ACCOUNT_ID:
-            print("[linkedin_poster] Posting via: Zernio -> InsightPulse page")
-            if dry_run:
-                self._db.log_run(
-                    agent_name="linkedin_poster",
-                    status="success",
-                    input_summary=f"dry_run post len={len(content)}",
-                    output_summary="dry_run -- no Zernio API call made",
-                )
-                print(f"[linkedin_poster] DRY RUN -- would post via Zernio ({len(content)} chars):")
-                safe_preview = content[:300].encode('ascii', errors='replace').decode('ascii')
-                print(f"  {safe_preview}{'...' if len(content) > 300 else ''}")
-                return PostResult(success=True, post_id=None, status="dry_run", queued_at=None)
-            if self._db.has_recent_post(hours=RATE_LIMIT_HOURS):
-                msg = f"Rate limit: a post was already made in the last {RATE_LIMIT_HOURS} hours."
-                logger.warning(msg)
-                self._db.log_run(
-                    agent_name="linkedin_poster",
-                    status="skipped",
-                    input_summary=f"post() called len={len(content)}",
-                    output_summary=msg,
-                )
-                return PostResult(success=False, post_id=None, status="rate_limited", queued_at=None)
-            return self._post_via_zernio(content)
-
-        # Routes 2 & 3: LinkedIn Consumer API
         self._check_token_expiry()
-        if self._org_urn:
-            print("[linkedin_poster] Posting via: LinkedIn API -> org page")
-            author_urn = self._org_urn
-        else:
-            print("[linkedin_poster] Posting via: LinkedIn API -> personal profile")
-            author_urn = self._person_urn
 
-        if not self._token or not author_urn:
+        use_zernio = bool(self._zernio_key and self._zernio_account_id)
+        author_urn = self._org_urn or self._person_urn
+        author_label = (
+            "Zernio -> InsightPulse page" if use_zernio
+            else "LinkedIn API -> org page" if self._org_urn
+            else "LinkedIn API -> personal profile"
+        )
+        print(f"[linkedin_poster] Posting via: {author_label}")
+
+        if not use_zernio and (not self._token or not author_urn):
             self._db.log_run(
                 agent_name="linkedin_poster",
                 status="skipped",
@@ -104,9 +83,9 @@ class LinkedInPoster:
                 agent_name="linkedin_poster",
                 status="success",
                 input_summary=f"dry_run post len={len(content)}",
-                output_summary="dry_run -- no LinkedIn API call made",
+                output_summary=f"dry_run -- no {author_label} call made",
             )
-            print(f"[linkedin_poster] DRY RUN -- would post to LinkedIn ({len(content)} chars):")
+            print(f"[linkedin_poster] DRY RUN -- would post ({len(content)} chars):")
             # Encode safely for Windows terminal (cp1252 rejects emoji)
             safe_preview = content[:300].encode('ascii', errors='replace').decode('ascii')
             print(f"  {safe_preview}{'...' if len(content) > 300 else ''}")
@@ -123,6 +102,8 @@ class LinkedInPoster:
             )
             return PostResult(success=False, post_id=None, status="rate_limited", queued_at=None)
 
+        if use_zernio:
+            return self._post_via_zernio(content)
         return self._call_linkedin_api(content, author_urn)
 
     # ------------------------------------------------------------------
@@ -205,19 +186,13 @@ class LinkedInPoster:
         try:
             payload = {
                 "content": content,
-                "platforms": [{
-                    "platform": "linkedin",
-                    "accountId": config.ZERNIO_ACCOUNT_ID,
-                    "platformSpecificData": {
-                        "organizationUrn": config.ZERNIO_ORGANIZATION_URN,
-                    },
-                }],
+                "platforms": [{"platform": "linkedin", "accountId": self._zernio_account_id}],
                 "publishNow": True,
             }
             resp = requests.post(
                 ZERNIO_URL,
                 headers={
-                    "Authorization": f"Bearer {config.ZERNIO_API_KEY}",
+                    "Authorization": f"Bearer {self._zernio_key}",
                     "Content-Type": "application/json",
                 },
                 json=payload,
@@ -233,7 +208,7 @@ class LinkedInPoster:
                 output_summary=f"posted via zernio post_id={post_id}",
             )
             print(f"[linkedin_poster] LIVE -- posted via Zernio. post_id={post_id}")
-            return PostResult(success=True, post_id=post_id, status="published", queued_at=None)
+            return PostResult(success=True, post_id=post_id, status="posted", queued_at=None)
         except Exception as exc:
             logger.error("Zernio post failed: %s", exc)
             self._db.log_run(
