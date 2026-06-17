@@ -37,6 +37,7 @@ class LinkedInPoster:
         self._db = db
         self._token = config.LINKEDIN_ACCESS_TOKEN
         self._person_urn = config.LINKEDIN_PERSON_URN
+        self._org_urn = config.LINKEDIN_ORGANIZATION_URN
         self._token_created = config.LINKEDIN_TOKEN_CREATED
 
     # ------------------------------------------------------------------
@@ -52,18 +53,23 @@ class LinkedInPoster:
         """
         self._check_token_expiry()
 
-        if not self._token or not self._person_urn:
+        author_urn = self._org_urn or self._person_urn
+        author_label = "InsightPulse (organization)" if self._org_urn else "personal profile"
+
+        if not self._token or not author_urn:
             self._db.log_run(
                 agent_name="linkedin_poster",
                 status="skipped",
                 input_summary="post() called",
-                output_summary="LINKEDIN_ACCESS_TOKEN or LINKEDIN_PERSON_URN not set",
+                output_summary="LINKEDIN_ACCESS_TOKEN or author URN not set",
             )
             logger.warning("LinkedInPoster: credentials not configured.")
             return PostResult(
                 success=False, post_id=None,
                 status="not_configured", queued_at=None,
             )
+
+        print(f"[linkedin_poster] Posting as: {author_label}")
 
         if dry_run:
             self._db.log_run(
@@ -96,7 +102,7 @@ class LinkedInPoster:
                 status="rate_limited", queued_at=None,
             )
 
-        return self._call_linkedin_api(content)
+        return self._call_linkedin_api(content, author_urn)
 
     # ------------------------------------------------------------------
     # Internal
@@ -116,11 +122,11 @@ class LinkedInPoster:
         except (ValueError, TypeError):
             pass
 
-    def _call_linkedin_api(self, content: str) -> PostResult:
+    def _call_linkedin_api(self, content: str, author_urn: str) -> PostResult:
         """POST content to LinkedIn ugcPosts endpoint; return PostResult."""
         try:
             body = {
-                "author": self._person_urn,
+                "author": author_urn,
                 "lifecycleState": "PUBLISHED",
                 "specificContent": {
                     "com.linkedin.ugc.ShareContent": {

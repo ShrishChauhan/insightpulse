@@ -140,3 +140,4 @@ Format: one line, under 15 words, no explanation. Never remove entries.
 - Reddit permanently closed all API access May 30 2026. Replaced with Bluesky (social), YouTube (consumer video comments), ProductHunt (launch discourse), App Store RSS (direct app reviews), HN, RSS. No reddit code remains in the project.
 - Bluesky public.api.bsky.app/xrpc/app.bsky.feed.searchPosts returns 403 from non-residential IPs (same pattern as Reddit). Works on a home IP; from a cloud/VPN IP add auth via BLUESKY_APP_PASSWORD if needed.
 - Apple App Store RSS feed: first entry in feed.entry[] is app metadata (no im:rating key) — skip it; only entries with im:rating are user reviews.
+- Prefer posting via LINKEDIN_ORGANIZATION_URN (InsightPulse company page) over personal profile. Set org URN in .env after creating LinkedIn company page.
