@@ -41,6 +41,11 @@ LINKEDIN_PERSON_URN = os.getenv("LINKEDIN_PERSON_URN")
 LINKEDIN_ORGANIZATION_URN = os.getenv("LINKEDIN_ORGANIZATION_URN")
 LINKEDIN_TOKEN_CREATED = os.getenv("LINKEDIN_TOKEN_CREATED", "2026-06-13")
 
+# Zernio (LinkedIn company page posting via pre-approved API)
+ZERNIO_API_KEY = os.getenv("ZERNIO_API_KEY")
+ZERNIO_ACCOUNT_ID = os.getenv("ZERNIO_ACCOUNT_ID")
+ZERNIO_ORGANIZATION_URN = os.getenv("ZERNIO_ORGANIZATION_URN")
+
 # Serper.dev (Google SERP API — free 2500 lifetime queries, no CC required)
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 
