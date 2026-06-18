@@ -16,7 +16,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -q -r requirements.txt
+        run: pip install --no-cache-dir -q -r requirements.txt
 
       - name: Run gold mining
         env:
