@@ -14,5 +14,5 @@ streamlit
 pandas
 reportlab
 requests
-beautifulsoup4
 plotly
+beautifulsoup4

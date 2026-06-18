@@ -16,7 +16,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install --no-cache-dir -q -r requirements.txt
+        run: python -m pip install --no-cache-dir -q -r requirements.txt
 
       - name: Run pipeline
         env:
