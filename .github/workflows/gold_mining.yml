@@ -33,4 +33,5 @@ jobs:
           ZERNIO_ORGANIZATION_URN: ${{ secrets.ZERNIO_ORGANIZATION_URN }}
           PROVIDER: ${{ secrets.PROVIDER }}
           LINKEDIN_TOKEN_CREATED: ${{ secrets.LINKEDIN_TOKEN_CREATED }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python gold_mine.py --all

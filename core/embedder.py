@@ -5,6 +5,7 @@ sentence-transformers (all-MiniLM-L6-v2, local/free), and stores to
 Supabase pgvector via core/db.py. Never calls Supabase directly.
 """
 
+import os
 import re
 import time
 
@@ -41,6 +42,10 @@ class Embedder:
 
     def __init__(self) -> None:
         """Load sentence-transformer model and tiktoken encoder."""
+        hf_token = os.getenv("HF_TOKEN")
+        if hf_token:
+            from huggingface_hub import login
+            login(token=hf_token)
         self._model = SentenceTransformer(config.EMBEDDING_MODEL)
         self._enc = tiktoken.get_encoding("cl100k_base")
         self._db = SupabaseClient()
