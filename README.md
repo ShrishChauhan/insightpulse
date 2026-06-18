@@ -124,6 +124,16 @@ python -m streamlit run dashboard/app.py
 
 **Pipeline operational.** End-to-end dry-run passed 19/25 (auto_post threshold). HN + RSS sources active (247 chunks in Supabase). LinkedIn Consumer API integrated. Reddit API credentials pending — all other sources live.
 
+## Automation
+
+InsightPulse runs fully autonomously via GitHub Actions:
+- Daily 6AM UTC: scrape all sources + embed into Supabase
+- Monday/Thursday 9AM UTC: generate and publish LinkedIn post
+- Sunday 7AM UTC: Gold Mining — targeted Reddit pain thread extraction
+
+No local machine required. Workflow runs are visible at
+github.com/ShrishChauhan/insightpulse/actions
+
 ## Built By
 
 Shrish Chauhan — Engineering student targeting APM/RPM roles.  
