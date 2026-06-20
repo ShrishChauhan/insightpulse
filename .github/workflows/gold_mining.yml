@@ -34,4 +34,5 @@ jobs:
           PROVIDER: ${{ secrets.PROVIDER }}
           LINKEDIN_TOKEN_CREATED: ${{ secrets.LINKEDIN_TOKEN_CREATED }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GUARDIAN_API_KEY: ${{ secrets.GUARDIAN_API_KEY }}
         run: python gold_mine.py --all

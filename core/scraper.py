@@ -1,4 +1,4 @@
-"""Bluesky, YouTube, ProductHunt, App Store, HN, and RSS feed ingestion.
+"""Bluesky, YouTube, ProductHunt, App Store, HN, RSS, and Guardian feed ingestion.
 
 All scrapers return List[ScrapedPost] and log each run to Supabase via
 core/db.py. Never raises — failed sources are skipped and logged.
@@ -33,7 +33,7 @@ class ScrapedPost(TypedDict):
     created_utc: float
     url: str
     company_tags: list[str]
-    source_type: str   # "bluesky" | "youtube" | "producthunt" | "app_store" | "hn" | "rss" | "reddit_gold"
+    source_type: str   # "bluesky" | "youtube" | "producthunt" | "app_store" | "hn" | "rss" | "reddit_gold" | "guardian"
     source_name: str   # human-readable source label
 
 
@@ -1060,6 +1060,99 @@ class GoldMiningScraper:
 
 
 # ---------------------------------------------------------------------------
+# GuardianScraper
+# ---------------------------------------------------------------------------
+
+class GuardianScraper:
+    """Fetches full-text journalism from The Guardian Open Platform — requires GUARDIAN_API_KEY."""
+
+    AGENT_NAME = "scraper_guardian"
+    BASE_URL = "https://content.guardianapis.com/search"
+    PAGE_SIZE = 10
+    MIN_BODY_LEN = 100
+
+    def __init__(self) -> None:
+        self._db = SupabaseClient()
+        self._session = requests.Session()
+        self._session.headers.update({"User-Agent": "InsightPulse/1.0"})
+
+    def scrape(self) -> list[ScrapedPost]:
+        """Search The Guardian for each GUARDIAN_QUERIES company; return full-text articles."""
+        if not config.GUARDIAN_API_KEY:
+            print("[guardian] skipping guardian: GUARDIAN_API_KEY not configured")
+            return []
+
+        start = time.time()
+        posts: list[ScrapedPost] = []
+        errors: list[str] = []
+
+        for company in config.GUARDIAN_QUERIES:
+            try:
+                fetched = self._search_company(company)
+                posts.extend(fetched)
+            except Exception as exc:
+                errors.append(f"{company}: {exc}")
+                print(f"[guardian] skipping {company}: {exc}")
+            time.sleep(0.5)
+
+        duration_ms = int((time.time() - start) * 1000)
+        all_failed = bool(errors) and len(errors) == len(config.GUARDIAN_QUERIES)
+        self._db.log_run(
+            agent_name=self.AGENT_NAME,
+            status="failed" if all_failed else "success",
+            input_summary=f"companies={len(config.GUARDIAN_QUERIES)}",
+            output_summary=f"posts={len(posts)} errors={len(errors)}",
+            duration_ms=duration_ms,
+            error="; ".join(errors) if errors else None,
+        )
+        return posts
+
+    def _search_company(self, company: str) -> list[ScrapedPost]:
+        """Fetch up to PAGE_SIZE Guardian articles for one company query."""
+        resp = self._session.get(
+            self.BASE_URL,
+            params={
+                "q": company,
+                "api-key": config.GUARDIAN_API_KEY,
+                "show-fields": "bodyText",
+                "order-by": "newest",
+                "page-size": self.PAGE_SIZE,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+
+        posts: list[ScrapedPost] = []
+        for result in resp.json().get("response", {}).get("results", []):
+            body: str = result.get("fields", {}).get("bodyText", "") or ""
+            if len(body) < self.MIN_BODY_LEN:
+                continue
+
+            title: str = result.get("webTitle", "")
+            url: str = result.get("webUrl", "")
+            published = result.get("webPublicationDate", "")
+            try:
+                created_utc = _parse_iso(published)
+            except Exception:
+                created_utc = 0.0
+
+            posts.append(ScrapedPost(
+                id=f"guardian_{abs(hash(url or title))}",
+                title=title,
+                body=body,
+                comments=[],
+                subreddit="",
+                score=0,
+                created_utc=created_utc,
+                url=url,
+                company_tags=_detect_company_tags(f"{title} {body}"),
+                source_type="guardian",
+                source_name="The Guardian",
+            ))
+        return posts
+
+
+# ---------------------------------------------------------------------------
 # Unified entry point
 # ---------------------------------------------------------------------------
 
@@ -1082,6 +1175,7 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
         "producthunt": [],
         "arctic_shift": [],
         "gold_mining": [],
+        "guardian": [],
     }
 
     for source, scraper_cls in [
@@ -1094,6 +1188,7 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
         ("producthunt", ProductHuntScraper),
         ("arctic_shift", ArcticShiftScraper),
         ("gold_mining", GoldMiningScraper),
+        ("guardian", GuardianScraper),
     ]:
         try:
             results[source] = scraper_cls().scrape()
@@ -1117,7 +1212,7 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
     db.log_run(
         agent_name="scraper_all",
         status="success",
-        input_summary="sources=bluesky,hn,hn_algolia,rss,app_store,youtube,producthunt,arctic_shift,gold_mining",
+        input_summary="sources=bluesky,hn,hn_algolia,rss,app_store,youtube,producthunt,arctic_shift,gold_mining,guardian",
         output_summary=f"total={total} {source_summary}",
         duration_ms=duration_ms,
     )

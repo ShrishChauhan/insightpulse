@@ -49,6 +49,9 @@ ZERNIO_ORGANIZATION_URN = os.getenv("ZERNIO_ORGANIZATION_URN")
 # Serper.dev (Google SERP API — free 2500 lifetime queries, no CC required)
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 
+# The Guardian Open Platform (free full-text news API — 5,000 calls/day, 12 req/sec)
+GUARDIAN_API_KEY = os.getenv("GUARDIAN_API_KEY")
+
 # Startup validation — fail loudly at import time, not deep in the call stack
 _REQUIRED: dict[str, str | None] = {
     "SUPABASE_URL": SUPABASE_URL,
@@ -75,6 +78,9 @@ COMPANY_TAGS = [
 ]
 
 GOLD_MINING_MAX_RESULTS = 10  # Serper results per query
+
+# Guardian queries — one search per company, reuses the same company list
+GUARDIAN_QUERIES = COMPANY_TAGS
 
 GOLD_MINING_QUERIES: dict[str, list[str]] = {
     "spotify": [
