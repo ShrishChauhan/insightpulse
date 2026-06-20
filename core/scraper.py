@@ -1,4 +1,4 @@
-"""Bluesky, ProductHunt, App Store, HN, RSS, and Guardian feed ingestion.
+"""Bluesky, HN, HN Algolia, RSS, App Store, ProductHunt, Gold Mining (Serper+Arctic Shift), and Guardian feed ingestion.
 
 All scrapers return List[ScrapedPost] and log each run to Supabase via
 core/db.py. Never raises — failed sources are skipped and logged.
@@ -622,95 +622,6 @@ class RSScraper:
         return None
 
 
-# ---------------------------------------------------------------------------
-# ArcticShiftScraper
-# ---------------------------------------------------------------------------
-
-class ArcticShiftScraper:
-    """Fetches Reddit posts from ArcticShift archive API -- no credentials needed."""
-
-    AGENT_NAME = "scraper_arctic_shift"
-    BASE_URL = "https://arctic-shift.photon-reddit.com/api/posts/search"
-    LIMIT = 100
-    MIN_SCORE = 3
-    MIN_BODY_LEN = 30
-    SKIP_SUBREDDITS = {"test", "pics", "funny", "gaming", "news", "worldnews"}
-
-    def __init__(self) -> None:
-        self._db = SupabaseClient()
-        self._session = requests.Session()
-        self._session.headers.update({"User-Agent": "InsightPulse/1.0 (research)"})
-
-    def scrape(self) -> list[ScrapedPost]:
-        """Search ArcticShift archive for each COMPANY_TAG; return posts from last DAYS_LOOKBACK days."""
-        start = time.time()
-        posts: list[ScrapedPost] = []
-        errors: list[str] = []
-        seven_days_ago = (
-            datetime.now(timezone.utc) - timedelta(days=config.DAYS_LOOKBACK)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        for company in config.COMPANY_TAGS:
-            try:
-                fetched = self._search_company(company, seven_days_ago)
-                posts.extend(fetched)
-            except Exception as exc:
-                errors.append(f"{company}: {exc}")
-                print(f"[arctic_shift] skipping {company}: {exc}")
-            time.sleep(2)
-
-        duration_ms = int((time.time() - start) * 1000)
-        all_failed = len(errors) == len(config.COMPANY_TAGS)
-        self._db.log_run(
-            agent_name=self.AGENT_NAME,
-            status="failed" if all_failed else "success",
-            input_summary=f"companies={len(config.COMPANY_TAGS)}",
-            output_summary=f"posts={len(posts)} errors={len(errors)}",
-            duration_ms=duration_ms,
-            error="; ".join(errors) if errors else None,
-        )
-        return posts
-
-    def _search_company(self, company: str, after: str) -> list[ScrapedPost]:
-        """Fetch up to LIMIT posts for one company keyword."""
-        resp = self._session.get(
-            self.BASE_URL,
-            params={"q": company, "limit": self.LIMIT, "after": after},
-            timeout=20,
-        )
-        resp.raise_for_status()
-
-        posts: list[ScrapedPost] = []
-        for post in resp.json().get("data", []):
-            subreddit = post.get("subreddit", "")
-            if subreddit.lower() in self.SKIP_SUBREDDITS:
-                continue
-            score = post.get("score", 0)
-            if score < self.MIN_SCORE:
-                continue
-            body: str = post.get("selftext", "") or ""
-            if len(body) < self.MIN_BODY_LEN:
-                continue
-            title: str = post.get("title", "")
-            permalink = post.get("permalink", "")
-            url = f"https://reddit.com{permalink}"
-            created_utc = float(post.get("created_utc", 0))
-
-            posts.append(ScrapedPost(
-                id=f"arctic_shift_{abs(hash(permalink or title))}",
-                title=title,
-                body=body,
-                comments=[],
-                subreddit=subreddit,
-                score=score,
-                created_utc=created_utc,
-                url=url,
-                company_tags=_detect_company_tags(f"{title} {body}"),
-                source_type="arctic_shift",
-                source_name=f"r/{subreddit}",
-            ))
-        return posts
-
 
 # ---------------------------------------------------------------------------
 # HNAlgoliaScraper
@@ -1054,7 +965,6 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
         "rss": [],
         "app_store": [],
         "producthunt": [],
-        "arctic_shift": [],
         "gold_mining": [],
         "guardian": [],
     }
@@ -1066,7 +976,6 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
         ("rss", RSScraper),
         ("app_store", AppStoreScraper),
         ("producthunt", ProductHuntScraper),
-        ("arctic_shift", ArcticShiftScraper),
         ("gold_mining", GoldMiningScraper),
         ("guardian", GuardianScraper),
     ]:
@@ -1092,7 +1001,7 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
     db.log_run(
         agent_name="scraper_all",
         status="success",
-        input_summary="sources=bluesky,hn,hn_algolia,rss,app_store,producthunt,arctic_shift,gold_mining,guardian",
+        input_summary="sources=bluesky,hn,hn_algolia,rss,app_store,producthunt,gold_mining,guardian",
         output_summary=f"total={total} {source_summary}",
         duration_ms=duration_ms,
     )

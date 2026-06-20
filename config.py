@@ -31,10 +31,6 @@ PRODUCTHUNT_TOKEN = os.getenv("PRODUCTHUNT_TOKEN")
 # Alerts
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
 
-# Buffer (LinkedIn posting via Buffer API v1 — kept for reference)
-BUFFER_ACCESS_TOKEN = os.getenv("BUFFER_ACCESS_TOKEN")
-BUFFER_LINKEDIN_PROFILE_ID = os.getenv("BUFFER_LINKEDIN_PROFILE_ID")
-
 # LinkedIn Consumer API (direct posting via ugcPosts)
 LINKEDIN_ACCESS_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN")
 LINKEDIN_PERSON_URN = os.getenv("LINKEDIN_PERSON_URN")
@@ -139,9 +135,6 @@ APP_STORE_IDS = {
     "amazon": "297606951",
     "netflix": "363590051",
 }
-
-# LLM — kept for backwards compat; prefer GEMINI_MODEL / ANTHROPIC_MODEL via LLMClient
-CLAUDE_MODEL = ANTHROPIC_MODEL
 
 # Embeddings — all-MiniLM-L6-v2 has a 256-token max; 200 tokens stays safely under
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
