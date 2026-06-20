@@ -138,3 +138,5 @@ github.com/ShrishChauhan/insightpulse/actions
 
 Shrish Chauhan — Engineering student targeting APM/RPM roles.  
 [LinkedIn](https://www.linkedin.com/in/shrish-chauhan)
+
+See BUILD_JOURNAL.md for the full engineering narrative — roadblocks, recoveries, and design decisions.
