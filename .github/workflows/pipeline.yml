@@ -35,4 +35,6 @@ jobs:
           LINKEDIN_TOKEN_CREATED: ${{ secrets.LINKEDIN_TOKEN_CREATED }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           GUARDIAN_API_KEY: ${{ secrets.GUARDIAN_API_KEY }}
+          BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
+          BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
         run: python main.py --topic "" --company ""

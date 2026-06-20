@@ -1,4 +1,4 @@
-"""Bluesky, YouTube, ProductHunt, App Store, HN, RSS, and Guardian feed ingestion.
+"""Bluesky, ProductHunt, App Store, HN, RSS, and Guardian feed ingestion.
 
 All scrapers return List[ScrapedPost] and log each run to Supabase via
 core/db.py. Never raises — failed sources are skipped and logged.
@@ -33,7 +33,7 @@ class ScrapedPost(TypedDict):
     created_utc: float
     url: str
     company_tags: list[str]
-    source_type: str   # "bluesky" | "youtube" | "producthunt" | "app_store" | "hn" | "rss" | "reddit_gold" | "guardian"
+    source_type: str   # "bluesky" | "producthunt" | "app_store" | "hn" | "rss" | "reddit_gold" | "guardian"
     source_name: str   # human-readable source label
 
 
@@ -75,9 +75,10 @@ def _parse_iso(ts: str) -> float:
 # ---------------------------------------------------------------------------
 
 class BlueSkyScraper:
-    """Fetches recent posts from Bluesky public API — no credentials needed."""
+    """Fetches recent posts from Bluesky; authenticates with app-password to bypass IP 403."""
 
     AGENT_NAME = "scraper_bluesky"
+    AUTH_URL = "https://bsky.social/xrpc/com.atproto.server.createSession"
     BASE_URL = "https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts"
     LIMIT = 100
     MIN_BODY_LEN = 30
@@ -86,6 +87,24 @@ class BlueSkyScraper:
         self._db = SupabaseClient()
         self._session = requests.Session()
         self._session.headers.update({"User-Agent": "InsightPulse/1.0"})
+        self._authenticate()
+
+    def _authenticate(self) -> None:
+        """Obtain an access token via app-password and inject it into session headers."""
+        if not (config.BLUESKY_HANDLE and config.BLUESKY_APP_PASSWORD):
+            return
+        try:
+            resp = requests.post(
+                self.AUTH_URL,
+                json={"identifier": config.BLUESKY_HANDLE, "password": config.BLUESKY_APP_PASSWORD},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            token = resp.json().get("accessJwt")
+            if token:
+                self._session.headers["Authorization"] = f"Bearer {token}"
+        except Exception as exc:
+            print(f"[bluesky] auth failed, continuing unauthenticated: {exc}")
 
     def scrape(self) -> list[ScrapedPost]:
         """Search Bluesky for each COMPANY_TAG; return posts from last DAYS_LOOKBACK days."""
@@ -159,148 +178,6 @@ class BlueSkyScraper:
                 source_name="bluesky",
             ))
         return posts
-
-
-# ---------------------------------------------------------------------------
-# YouTubeScraper
-# ---------------------------------------------------------------------------
-
-class YouTubeScraper:
-    """Fetches video comments from YouTube Data API v3 — requires YOUTUBE_API_KEY."""
-
-    AGENT_NAME = "scraper_youtube"
-    SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
-    COMMENTS_URL = "https://www.googleapis.com/youtube/v3/commentThreads"
-    MAX_VIDEOS = 5
-    MAX_COMMENTS = 20
-    MIN_BODY_LEN = 50
-    SEARCH_COST = 100  # quota units per search call
-    COMMENT_COST = 1   # quota units per commentThreads call
-
-    def __init__(self) -> None:
-        self._db = SupabaseClient()
-        self._session = requests.Session()
-        self._quota_used = 0
-
-    def scrape(self) -> list[ScrapedPost]:
-        """Search YouTube for each COMPANY_TAG; return comment posts."""
-        if not config.YOUTUBE_API_KEY:
-            print("[youtube] skipping youtube: credentials not configured")
-            return []
-
-        start = time.time()
-        posts: list[ScrapedPost] = []
-        errors: list[str] = []
-        published_after = (
-            datetime.now(timezone.utc) - timedelta(days=config.DAYS_LOOKBACK)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        for company in config.COMPANY_TAGS:
-            if self._quota_used >= config.YOUTUBE_DAILY_QUOTA_LIMIT:
-                print(f"[youtube] daily quota limit reached ({self._quota_used} units used)")
-                break
-            try:
-                fetched = self._scrape_company(company, published_after)
-                posts.extend(fetched)
-            except Exception as exc:
-                errors.append(f"{company}: {exc}")
-                print(f"[youtube] skipping {company}: {exc}")
-            time.sleep(0.5)
-
-        duration_ms = int((time.time() - start) * 1000)
-        status = "failed" if errors and not posts else "success"
-        self._db.log_run(
-            agent_name=self.AGENT_NAME,
-            status=status,
-            input_summary=f"companies={len(config.COMPANY_TAGS)} quota_used={self._quota_used}",
-            output_summary=f"posts={len(posts)} errors={len(errors)}",
-            duration_ms=duration_ms,
-            error="; ".join(errors) if errors else None,
-        )
-        return posts
-
-    def _scrape_company(self, company: str, published_after: str) -> list[ScrapedPost]:
-        """Search videos for one company, then fetch top comments for each video."""
-        video_ids = self._search_videos(company, published_after)
-        posts: list[ScrapedPost] = []
-        for video_id, video_title in video_ids:
-            if self._quota_used >= config.YOUTUBE_DAILY_QUOTA_LIMIT:
-                break
-            for comment in self._fetch_comments(video_id):
-                if len(comment["body"]) < self.MIN_BODY_LEN:
-                    continue
-                full_text = f"{comment['body']} {video_title}"
-                posts.append(ScrapedPost(
-                    id=f"youtube_{video_id}_{comment['id']}",
-                    title=f"YouTube comment on: {video_title[:80]}",
-                    body=comment["body"],
-                    comments=[],
-                    subreddit="youtube",
-                    score=comment["like_count"],
-                    created_utc=comment["created_utc"],
-                    url=f"https://youtube.com/watch?v={video_id}",
-                    company_tags=_detect_company_tags(full_text),
-                    source_type="youtube",
-                    source_name="youtube",
-                ))
-        return posts
-
-    def _search_videos(self, company: str, published_after: str) -> list[tuple[str, str]]:
-        """Return list of (video_id, title) for a company query."""
-        resp = self._session.get(
-            self.SEARCH_URL,
-            params={
-                "q": f"{company} review OR product OR features 2026",
-                "type": "video",
-                "order": "relevance",
-                "publishedAfter": published_after,
-                "maxResults": self.MAX_VIDEOS,
-                "key": config.YOUTUBE_API_KEY,
-                "part": "snippet",
-            },
-            timeout=15,
-        )
-        resp.raise_for_status()
-        self._quota_used += self.SEARCH_COST
-        return [
-            (item["id"]["videoId"], item["snippet"]["title"])
-            for item in resp.json().get("items", [])
-            if item.get("id", {}).get("videoId")
-        ]
-
-    def _fetch_comments(self, video_id: str) -> list[dict]:
-        """Return top comment dicts for a video."""
-        try:
-            resp = self._session.get(
-                self.COMMENTS_URL,
-                params={
-                    "videoId": video_id,
-                    "maxResults": self.MAX_COMMENTS,
-                    "order": "relevance",
-                    "key": config.YOUTUBE_API_KEY,
-                    "part": "snippet",
-                },
-                timeout=15,
-            )
-            resp.raise_for_status()
-            self._quota_used += self.COMMENT_COST
-            results = []
-            for item in resp.json().get("items", []):
-                snippet = item["snippet"]["topLevelComment"]["snippet"]
-                try:
-                    created_utc = _parse_iso(snippet.get("publishedAt", ""))
-                except Exception:
-                    created_utc = 0.0
-                results.append({
-                    "id": item["id"],
-                    "body": snippet.get("textDisplay", ""),
-                    "like_count": snippet.get("likeCount", 0),
-                    "created_utc": created_utc,
-                })
-            return results
-        except Exception as exc:
-            print(f"[youtube] comments failed for {video_id}: {exc}")
-            return []
 
 
 # ---------------------------------------------------------------------------
@@ -1171,7 +1048,6 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
         "hn_algolia": [],
         "rss": [],
         "app_store": [],
-        "youtube": [],
         "producthunt": [],
         "arctic_shift": [],
         "gold_mining": [],
@@ -1184,7 +1060,6 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
         ("hn_algolia", HNAlgoliaScraper),
         ("rss", RSScraper),
         ("app_store", AppStoreScraper),
-        ("youtube", YouTubeScraper),
         ("producthunt", ProductHuntScraper),
         ("arctic_shift", ArcticShiftScraper),
         ("gold_mining", GoldMiningScraper),
@@ -1212,7 +1087,7 @@ def scrape_all() -> dict[str, list[ScrapedPost]]:
     db.log_run(
         agent_name="scraper_all",
         status="success",
-        input_summary="sources=bluesky,hn,hn_algolia,rss,app_store,youtube,producthunt,arctic_shift,gold_mining,guardian",
+        input_summary="sources=bluesky,hn,hn_algolia,rss,app_store,producthunt,arctic_shift,gold_mining,guardian",
         output_summary=f"total={total} {source_summary}",
         duration_ms=duration_ms,
     )

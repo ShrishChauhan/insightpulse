@@ -21,9 +21,9 @@ ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 # Anthropic
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
-# YouTube Data API v3 (free key from Google Cloud Console)
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
-YOUTUBE_DAILY_QUOTA_LIMIT = 8000  # stay under free tier daily cap of 10,000 units
+# Bluesky (app-password auth to bypass anonymous IP 403)
+BLUESKY_HANDLE = os.getenv("BLUESKY_HANDLE")
+BLUESKY_APP_PASSWORD = os.getenv("BLUESKY_APP_PASSWORD")
 
 # ProductHunt (Developer Token from producthunt.com/v2/oauth/applications)
 PRODUCTHUNT_TOKEN = os.getenv("PRODUCTHUNT_TOKEN")
