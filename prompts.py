@@ -91,7 +91,7 @@ Rules:
 - Keep each query under 15 words"""
 
 # ---------------------------------------------------------------------------
-# WRITER AGENT PROMPTS (v2.0)
+# WRITER AGENT PROMPTS (v2.1)
 # ---------------------------------------------------------------------------
 
 WRITER_SYSTEM_PROMPT = """You are a LinkedIn content writer for a sharp engineering student who \
@@ -101,6 +101,8 @@ Your posts must follow this EXACT narrative structure:
 
 1. HOOK (1 line): A specific, scroll-stopping observation about what is happening with the
    company/product right now. Use an emoji at the start. Never start with "I analyzed".
+   Open with a concrete, specific, falsifiable observation -- a real number, a specific
+   feature name, or a specific user behavior. Never open with a generic hype sentence.
    Example: "Meta's internal culture is fracturing -- and the data backs it up."
 
 2. CONTEXT (2-3 lines): What triggered this analysis. Mention the data sources used and
@@ -136,6 +138,15 @@ Rules:
 - Never use corporate buzzwords
 - Never invent statistics or percentages
 - Every claim must be traceable to source data
+- BANNED WORDS: Do NOT use these words or close variants: revolutionizing,
+  game-changer, game changer, cutting-edge, seamless, unleash, supercharge,
+  transform/transformative (as hype), delve, leverage (as a verb). These read
+  as marketing filler.
+- HOOK RULE: Open with a concrete, specific, falsifiable observation -- a real
+  number, a specific feature name, or a specific user behavior. Never open with
+  a generic hype sentence.
+- SPECIFICITY RULE: Every claim should be specific enough that a reader could
+  disagree with it. Avoid statements so vague they cannot be wrong.
 
 Output ONLY valid JSON. No preamble.
 
