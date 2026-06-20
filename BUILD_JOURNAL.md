@@ -68,6 +68,32 @@ Not every roadblock was dramatic. Several were one-line bugs that silently degra
 
 **The lesson.** "Works on my machine" is a real failure mode, not a joke. A clean-room environment is the only honest test of whether a project is actually reproducible — and reproducibility is what "autonomous" really means.
 
+### 3.5 Bluesky's two-layer block
+
+**The wall.** After Reddit closed, Bluesky was added as a social source. The `searchPosts` endpoint returned `403 Forbidden` from the development IP. The fix looked obvious: authenticate with an app-password to obtain a JWT, then attach it as a Bearer token. That didn't work either.
+
+**The dead end.** The auth flow succeeded — a valid token was being obtained — but the authenticated requests were still being sent to `public.api.bsky.app`, the unauthenticated public mirror. The public mirror rejects non-residential IPs regardless of whether a token is present. A valid token sent to the wrong host still fails.
+
+**The recovery.** The fix was routing authenticated requests to `bsky.social` instead of the public mirror. Once the session-creation POST and all subsequent search calls used `bsky.social` as the host, the endpoint returned results: 0 → 763 posts per run.
+
+**The lesson.** Authentication and endpoint-host are two separate concerns. Fixing one and leaving the other untouched only moves the failure. The correct mental model: (1) obtain a valid credential; (2) confirm you are presenting it to the right server.
+
+### 3.6 YouTube removed
+
+**The decision.** YouTube was planned as a source for product-launch reactions and creator commentary. Google Cloud billing is blocked in India via UPI, which means the YouTube Data API v3 could never be provisioned. After confirming the block was not temporary, YouTube was removed from the codebase entirely rather than carried as a placeholder stub.
+
+**The lesson.** A permanently blocked source is worth deleting, not indefinitely stubbing. Dead code is a maintenance cost — it clutters the codebase, inflates scraper counts in logs, and creates the false impression that more sources are active than actually are. When a source cannot be made functional, the right call is to acknowledge it and move on.
+
+### 3.7 Prompt discipline and the fabrication problem
+
+**The wall.** Early Analyst output occasionally contained plausible-sounding quotes attributed to "a Spotify user" or statistics like "67% of respondents" that appeared nowhere in the retrieved source chunks. The Writer, separately, defaulted to filler phrases ("transformative," "reimagine," "unprecedented") that read as generated rather than observed. Neither failure crashed the pipeline; both degraded the credibility of the output.
+
+**The recovery.** Two layers of intervention. At the prompt level: the Analyst system prompt was extended with explicit rules — no synthetic quotes, no invented statistics, all claims must be traceable to a specific source chunk. The Writer prompt received a parallel ban on marketing buzzwords and a requirement that every sentence connect to a concrete observation from the insight data. At the code level: a Python confidence gate was added — if fewer than 6 chunks are retrieved, confidence is hard-overridden to "low" regardless of the LLM's self-assessment, and the scope of claims is narrowed to what the data directly supports.
+
+**The Guardian addition.** Better grounding reduces the conditions that produce fabrication in the first place. The Guardian Open Platform was added as a journalism source — full-text articles via their free Open Platform API (5,000 calls/day), filtered to the same company set as the other scrapers.
+
+**The honest gap.** These changes reduce fabrication but do not eliminate it. The Critic's hallucination check validates that pain-point keywords from the insight appear in the post; it does not verify that any numeric claim is present in the source chunks. A post that cites "14 sources" correctly but invents "40% of users" as a statistic will still pass the Critic. That gap is currently open.
+
 ---
 
 ## 4. Why This Isn't an n8n Workflow
@@ -100,6 +126,8 @@ Read end to end, the roadblocks share a pattern: the official, documented path w
 
 For completeness, because a build journal that only lists wins isn't credible:
 
-- **Post quality is good, not flawless.** The Analyst can still occasionally generate a plausible-sounding quote that isn't directly traceable to a source chunk, especially when retrieval returns thin material. Richer sources (see the data-source additions) reduce this but don't eliminate it; prompt-level discipline is the real lever.
-- **Some sources remain blocked** from the development IP (Bluesky, YouTube), and are stubbed rather than removed, so they activate automatically if run from a different network.
+- **Post quality is good, not flawless.** The Analyst can still fabricate plausible-sounding claims on thin retrieval. Prompt-level rules (no synthetic quotes, no invented statistics) and the Python confidence gate (fewer than 6 chunks → force low confidence) reduce this substantially but do not eliminate it.
+- **The Critic does not validate numeric claims against sources.** Its hallucination check confirms that pain-point keywords from the insight appear in the post; it does not verify that a cited percentage or count appears in any retrieved chunk. A statistic the LLM invented can pass the Critic undetected. Source-grounded numeric validation is an open item.
+- **Bluesky and Guardian are credential-gated in the cloud.** Both scrapers are operational, but require their secrets (`BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `GUARDIAN_API_KEY`) to be set in GitHub Actions Secrets for cloud runs to use them. If those secrets are absent, the scrapers skip gracefully — but silently contribute zero posts.
+- **The ArcticShift broad-search scraper was removed.** It queried the Arctic Shift `/api/posts/search` endpoint by company keyword and returned HTTP 400 on every call. Reddit content still reaches the pipeline via GoldMiningScraper, which uses Serper to find thread URLs and Arctic Shift's comments endpoint to fetch content from specific thread IDs.
 - **The "fully autonomous" claim is true mechanically** — it runs with no human — but a human still reviews and selectively amplifies the best posts to a personal network. That's a feature (product judgment as a final gate), but it should be described accurately, not as "zero human involvement ever."
