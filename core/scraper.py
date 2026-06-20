@@ -79,7 +79,8 @@ class BlueSkyScraper:
 
     AGENT_NAME = "scraper_bluesky"
     AUTH_URL = "https://bsky.social/xrpc/com.atproto.server.createSession"
-    BASE_URL = "https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts"
+    AUTH_SEARCH_URL = "https://bsky.social/xrpc/app.bsky.feed.searchPosts"
+    PUBLIC_SEARCH_URL = "https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts"
     LIMIT = 100
     MIN_BODY_LEN = 30
 
@@ -87,11 +88,13 @@ class BlueSkyScraper:
         self._db = SupabaseClient()
         self._session = requests.Session()
         self._session.headers.update({"User-Agent": "InsightPulse/1.0"})
+        self._search_url = self.PUBLIC_SEARCH_URL
         self._authenticate()
 
     def _authenticate(self) -> None:
         """Obtain an access token via app-password and inject it into session headers."""
         if not (config.BLUESKY_HANDLE and config.BLUESKY_APP_PASSWORD):
+            print("[bluesky] no credentials set, using public (unauthenticated) endpoint")
             return
         try:
             resp = requests.post(
@@ -103,6 +106,8 @@ class BlueSkyScraper:
             token = resp.json().get("accessJwt")
             if token:
                 self._session.headers["Authorization"] = f"Bearer {token}"
+                self._search_url = self.AUTH_SEARCH_URL
+                print(f"[bluesky] authenticated as {config.BLUESKY_HANDLE}")
         except Exception as exc:
             print(f"[bluesky] auth failed, continuing unauthenticated: {exc}")
 
@@ -137,7 +142,7 @@ class BlueSkyScraper:
     def _search_company(self, company: str, cutoff: float) -> list[ScrapedPost]:
         """Fetch up to LIMIT posts for one company keyword."""
         resp = self._session.get(
-            self.BASE_URL,
+            self._search_url,
             params={"q": company, "limit": self.LIMIT, "sort": "latest"},
             timeout=15,
         )
