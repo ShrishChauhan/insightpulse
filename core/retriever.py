@@ -168,7 +168,7 @@ class Retriever:
         # --- Confidence self-check ---
         pain_count = len(raw_insight.get("pain_points") or [])
         chunk_count = retrieval["chunk_count"]
-        if pain_count < 3 or chunk_count < 5:
+        if pain_count < 3 or chunk_count < 6:
             raw_insight["confidence"] = "low"
             logger.warning(
                 "Low confidence: pain_points=%d chunk_count=%d topic=%s",
