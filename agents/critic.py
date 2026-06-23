@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from typing import TYPE_CHECKING, Optional
 from typing_extensions import TypedDict
@@ -26,6 +27,17 @@ _SCORE_FIELDS = frozenset({
     "pm_relevance",
     "engagement_potential",
 })
+
+# Numeric patterns that represent factual claims worth verifying against source chunks.
+# Deliberately excludes plain integers to avoid false positives on source counts,
+# bullet counts, and other conversational numbers.
+_NUMERIC_PATTERNS = [
+    r'\d+(?:\.\d+)?%',                                                        # 85%, 17.5%
+    r'\d+(?:\.\d+)?[xX]\b',                                                   # 3x, 2.5x
+    r'\$\d+(?:\.\d+)?(?:\s*[KMBkmb]|\s*(?:million|billion|thousand))?\b',    # $50M, $17.5
+    r'\d+(?:\.\d+)?\s*(?:million|billion|thousand)\b',                        # 15 million
+    r'\d+(?:\.\d+)?[KMBkmb]\b',                                               # 50K, 3M
+]
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +77,7 @@ class CriticAgent:
         post_draft: "PostDraft",
         insight: "InsightResult",
         topic_id: str = "",
+        source_chunks: Optional[list] = None,
     ) -> CriticResult:
         """Score a post via LLM, recompute decision in Python, log to DB."""
         user_prompt = (
@@ -99,10 +112,20 @@ class CriticAgent:
         else:
             decision = "auto_reject"
 
-        # --- Hallucination check: Python keyword gate ---
-        hallucination_check = self._check_hallucination(
-            post_text=post_draft["linkedin_post"],
+        # --- Hallucination check: keyword gate + numeric-claim gate ---
+        post_text = post_draft["linkedin_post"]
+        kw_result = self._check_hallucination(post_text=post_text, insight=insight)
+        num_result, num_detail = self._check_numeric_claims(
+            post_text=post_text,
             insight=insight,
+            source_chunks=source_chunks or [],
+        )
+        hallucination_check = (
+            "passed" if (kw_result == "passed" and num_result == "passed") else "failed"
+        )
+        hallucination_detail = (
+            num_detail if num_result == "failed"
+            else ("pain_point keyword mismatch" if kw_result == "failed" else "")
         )
 
         result = CriticResult(
@@ -112,7 +135,7 @@ class CriticAgent:
             primary_weakness=raw.get("primary_weakness", ""),
             improvement_suggestion=raw.get("improvement_suggestion", ""),
             hallucination_check=hallucination_check,
-            hallucination_detail=raw.get("hallucination_detail", ""),
+            hallucination_detail=hallucination_detail,
         )
 
         # --- Log post record (if topic_id provided) ---
@@ -134,6 +157,7 @@ class CriticAgent:
             output_summary=(
                 f"total={total} decision={decision} "
                 f"hallucination={hallucination_check}"
+                + (f" detail={hallucination_detail}" if hallucination_detail else "")
             ),
             duration_ms=duration_ms,
         )
@@ -186,3 +210,67 @@ class CriticAgent:
             matched,
         )
         return "failed"
+
+    def _check_numeric_claims(
+        self,
+        post_text: str,
+        insight: "InsightResult",
+        source_chunks: list,
+    ) -> tuple[str, str]:
+        """Verify that numeric claims in the post appear verbatim in source chunks.
+
+        Targets high-confidence fabrication patterns only: percentages, x-multiples,
+        million/billion/K/M scale numbers, and dollar amounts. Plain integers are not
+        checked to avoid false positives on source counts and conversational numbers.
+        Returns ("passed"|"failed", detail_string).
+        """
+        if not source_chunks:
+            return "passed", "no source chunks to verify against"
+
+        corpus = " ".join((c.get("content") or "") for c in source_chunks).lower()
+
+        # Pipeline-generated counts that are never in source chunks but are legitimate
+        exempt: set[str] = set()
+        sc = insight.get("source_count")
+        if sc is not None:
+            exempt.add(str(int(sc)))
+        cc = (insight.get("insight") or {}).get("chunk_count")
+        if cc is not None:
+            exempt.add(str(int(cc)))
+
+        # Strip hashtags and version strings before pattern matching
+        post_clean = re.sub(r'#\S+', '', post_text)
+        post_clean = re.sub(
+            r'\b(?:iOS|GPT|v|version|Android|Windows|macOS|watchOS)\s*\d+(?:\.\d+)?',
+            '', post_clean, flags=re.IGNORECASE,
+        )
+
+        # Extract all targeted numeric claims from the cleaned post
+        found: set[str] = set()
+        for pattern in _NUMERIC_PATTERNS:
+            for m in re.finditer(pattern, post_clean, re.IGNORECASE):
+                found.add(m.group(0).strip())
+
+        if not found:
+            return "passed", "no numeric claims to verify"
+
+        unsupported: list[str] = []
+        for claim in found:
+            bare_m = re.search(r'\d+(?:\.\d+)?', claim)
+            if not bare_m:
+                continue
+            bare = bare_m.group(0)
+            if bare in exempt:
+                continue
+            # Exempt calendar years (4-digit 19XX / 20XX)
+            if re.fullmatch(r'(?:19|20)\d{2}', bare):
+                continue
+            if not re.search(r'\b' + re.escape(bare) + r'\b', corpus):
+                unsupported.append(claim)
+
+        if unsupported:
+            detail = f"Ungrounded numeric claims: {', '.join(sorted(unsupported))}"
+            logger.warning("Numeric hallucination check FAILED: %s", detail)
+            return "failed", detail
+
+        return "passed", f"all {len(found)} numeric claim(s) verified in source chunks"

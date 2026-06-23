@@ -493,10 +493,12 @@ class OrchestratorAgent:
                 company=insight.get("company", ""),
             ) or ""
 
+            source_chunks = (state.get("retrieval_result") or {}).get("chunks", [])
             result = self._critic.evaluate(
                 post_draft=post_draft,  # type: ignore[arg-type]
                 insight=insight,        # type: ignore[arg-type]
                 topic_id=topic_id,
+                source_chunks=source_chunks,
             )
             print(
                 f"[critique_node] score={result['total']}/25 "
