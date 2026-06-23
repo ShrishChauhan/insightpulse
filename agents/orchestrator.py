@@ -138,9 +138,10 @@ class OrchestratorAgent:
             if status in ("success", "posted"):
                 posts_created = 1
 
-        # Run a second topic if week_plan has more candidates
+        # Run a second topic if week_plan has more candidates and no live post went out yet
         week_plan = result.get("week_plan", [])
-        if len(week_plan) >= 2:
+        live_post_made = not dry_run and posts_created > 0
+        if len(week_plan) >= 2 and not live_post_made:
             second_topic = week_plan[1]
             second_result = self._run_from_topic(
                 topic=second_topic.get("topic", ""),
@@ -522,8 +523,8 @@ class OrchestratorAgent:
 
             result = self._poster.post(content, dry_run=dry_run)
 
-            # Log to posts table for any outcome except hard errors / queue full
-            if result["status"] in ("dry_run", "posted"):
+            # Log to posts table only for actual live publications
+            if result["status"] == "posted":
                 topic_id = self._db.log_topic(
                     topic=insight.get("topic", ""),
                     company=insight.get("company", ""),
