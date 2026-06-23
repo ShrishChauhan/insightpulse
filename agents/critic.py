@@ -138,18 +138,6 @@ class CriticAgent:
             hallucination_detail=hallucination_detail,
         )
 
-        # --- Log post record (if topic_id provided) ---
-        if topic_id:
-            try:
-                self.db.log_post(
-                    topic_id=topic_id,
-                    linkedin_post=post_draft["linkedin_post"],
-                    critic_score=total,
-                    decision=decision,
-                )
-            except Exception as exc:
-                logger.warning("DB log_post failed (non-fatal): %s", exc)
-
         self.db.log_run(
             agent_name="critic",
             status="success",
